@@ -1,15 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { format, isPast } from "date-fns";
+import {
+  format,
+  isPast,
+  isSameDay,
+  isSameMonth,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  addMonths,
+  subMonths,
+} from "date-fns";
 import { it } from "date-fns/locale";
-import { CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import clsx from "clsx";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function AppointmentsPage() {
-  const { data, isLoading, mutate } = useSWR("/api/appointments", fetcher);
+  const { data, isLoading, error, mutate } = useSWR("/api/appointments", fetcher);
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -18,9 +31,36 @@ export default function AppointmentsPage() {
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+
+  // SWR non distingue "risposta vuota" da "richiesta fallita": se il
+  // fetch va storto (rete, sessione scaduta...) mostriamo un errore
+  // esplicito invece di far sembrare che semplicemente non ci sono
+  // appuntamenti — capitava che sembrasse "sparito tutto" dopo un reload.
+  const fetchFailed = !isLoading && (error || (data && data.error));
+
   const appointments = (data?.appointments ?? []).sort(
     (a: any, b: any) => new Date(a.appointment_at).getTime() - new Date(b.appointment_at).getTime()
   );
+
+  const daysWithAppointments = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of appointments) {
+      set.add(format(new Date(a.appointment_at), "yyyy-MM-dd"));
+    }
+    return set;
+  }, [appointments]);
+
+  const calendarDays = useMemo(() => {
+    const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
+    const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
+    return eachDayOfInterval({ start, end });
+  }, [month]);
+
+  const visibleAppointments = selectedDay
+    ? appointments.filter((a: any) => isSameDay(new Date(a.appointment_at), selectedDay))
+    : appointments;
 
   async function markComplete(id: string) {
     await fetch(`/api/appointments/${id}`, {
@@ -116,6 +156,72 @@ export default function AppointmentsPage() {
         </form>
       )}
 
+      {/* Vista calendario mensile: un pallino sotto i giorni con almeno un
+          appuntamento, tocca un giorno per filtrare la lista qui sotto. */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setMonth((m) => subMonths(m, 1))}
+            aria-label="Mese precedente"
+            className="text-white/40 hover:text-white p-1"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <p className="font-medium capitalize">{format(month, "MMMM yyyy", { locale: it })}</p>
+          <button
+            onClick={() => setMonth((m) => addMonths(m, 1))}
+            aria-label="Mese successivo"
+            className="text-white/40 hover:text-white p-1"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1 text-center">
+          {["L", "M", "M", "G", "V", "S", "D"].map((d, i) => (
+            <span key={i} className="text-xs text-white/30">
+              {d}
+            </span>
+          ))}
+
+          {calendarDays.map((day) => {
+            const key = format(day, "yyyy-MM-dd");
+            const hasAppointment = daysWithAppointments.has(key);
+            const inMonth = isSameMonth(day, month);
+            const selected = selectedDay && isSameDay(day, selectedDay);
+            const today = isSameDay(day, new Date());
+
+            return (
+              <button
+                key={key}
+                onClick={() => setSelectedDay(selected ? null : day)}
+                className={clsx(
+                  "aspect-square rounded-full flex flex-col items-center justify-center text-sm transition-colors mx-auto w-8",
+                  !inMonth && "text-white/15",
+                  inMonth && !selected && "text-white/70 hover:bg-white/5",
+                  selected && "bg-primary text-white",
+                  !selected && today && "border border-primary-light/60"
+                )}
+              >
+                {format(day, "d")}
+                <span
+                  className={clsx(
+                    "w-1 h-1 rounded-full mt-0.5",
+                    hasAppointment ? (selected ? "bg-white" : "bg-primary-light") : "bg-transparent"
+                  )}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedDay && (
+          <button onClick={() => setSelectedDay(null)} className="text-xs text-primary-light">
+            Mostra tutti gli appuntamenti
+          </button>
+        )}
+      </div>
+
       {isLoading && (
         <div className="space-y-2">
           {[1, 2].map((i) => (
@@ -124,12 +230,21 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      {!isLoading && appointments.length === 0 && !showForm && (
-        <p className="text-white/30 text-sm py-8 text-center">Nessun appuntamento in programma.</p>
+      {fetchFailed && (
+        <p className="text-urgent text-sm px-1">
+          Non sono riuscito a caricare gli appuntamenti. Controlla la connessione e ricarica la
+          pagina.
+        </p>
+      )}
+
+      {!isLoading && !fetchFailed && visibleAppointments.length === 0 && !showForm && (
+        <p className="text-white/30 text-sm py-8 text-center">
+          {selectedDay ? "Nessun appuntamento in questo giorno." : "Nessun appuntamento in programma."}
+        </p>
       )}
 
       <div className="space-y-2">
-        {appointments.map((a: any) => {
+        {visibleAppointments.map((a: any) => {
           const when = new Date(a.appointment_at);
           const overdue = isPast(when);
 
