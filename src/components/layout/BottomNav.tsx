@@ -14,7 +14,7 @@ const ITEMS = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/timeline", label: "Ricordi", icon: Clock },
-  { href: "/appointments", label: "Appunt.", icon: CalendarDays },
+  { href: "/appointments", label: "Calendario", icon: CalendarDays },
   { href: "/deadlines", label: "Scadenze", icon: CalendarClock },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
