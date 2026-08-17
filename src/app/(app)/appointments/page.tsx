@@ -105,7 +105,7 @@ export default function AppointmentsPage() {
   return (
     <div className="px-4 pt-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Appuntamenti</h1>
+        <h1 className="text-xl font-semibold">Calendario</h1>
         <button
           onClick={() => setShowForm((v) => !v)}
           aria-label="Aggiungi appuntamento"
