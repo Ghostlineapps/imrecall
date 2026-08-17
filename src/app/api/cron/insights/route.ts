@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { sendEmail } from "@/lib/email/resend";
+import { sendPushToUser } from "@/lib/push/server";
 
 /**
  * Cron giornaliero (vedi vercel.json, schedule "0 7 * * *"): per ogni
@@ -21,11 +23,11 @@ export async function GET(req: NextRequest) {
   const month = today.getMonth() + 1;
   const day = today.getDate();
 
-  const { data: users } = await supabase.from("profiles").select("id");
+  const { data: users } = await supabase.from("profiles").select("id, email");
 
   for (const u of users ?? []) {
     await generateOnThisDay(supabase, u.id, month, day);
-    await generateDeadlineReminders(supabase, u.id);
+    await generateDeadlineReminders(supabase, u.id, u.email);
     await generatePreTripDigests(supabase, u.id);
   }
 
@@ -64,7 +66,7 @@ async function generateOnThisDay(supabase: any, userId: string, month: number, d
   });
 }
 
-async function generateDeadlineReminders(supabase: any, userId: string) {
+async function generateDeadlineReminders(supabase: any, userId: string, userEmail: string) {
   const { data: deadlines } = await supabase
     .from("deadlines")
     .select("*")
@@ -80,15 +82,30 @@ async function generateDeadlineReminders(supabase: any, userId: string) {
     if ((d.reminder_days_before ?? []).includes(daysUntil)) {
       // Priorità alta e crescente man mano che ci si avvicina alla scadenza
       const priority = 60 + Math.max(0, 15 - daysUntil);
+      const title = daysUntil <= 3 ? "Scadenza imminente" : "Scadenza in arrivo";
+      const body = `${d.title} — tra ${daysUntil} giorni (${d.due_date})`;
 
       await supabase.from("resurface_candidates").insert({
         user_id: userId,
         type: "deadline",
         deadline_id: d.id,
         priority_score: priority,
-        title: daysUntil <= 3 ? "Scadenza imminente" : "Scadenza in arrivo",
-        body: `${d.title} — tra ${daysUntil} giorni (${d.due_date})`,
+        title,
+        body,
       });
+
+      // Oltre alla card in-app, avvisiamo attivamente via email e push —
+      // altrimenti il promemoria resta invisibile finché non si riapre l'app.
+      await Promise.all([
+        userEmail
+          ? sendEmail({
+              to: userEmail,
+              subject: `${title}: ${d.title}`,
+              html: `<p>${body}.</p><p>Apri IMRECALL per i dettagli o per segnarla come fatta.</p>`,
+            })
+          : Promise.resolve(),
+        sendPushToUser(userId, { title, body, url: "/deadlines" }),
+      ]);
     }
   }
 }
