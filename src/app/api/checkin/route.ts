@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { reverseGeocode } from "@/lib/utils/geocoding";
 
 /**
  * Chiamato all'apertura dell'app (non background tracking — vedi nota nel
@@ -18,7 +19,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_coordinates" }, { status: 400 });
   }
 
-  await supabase.from("location_checkins").insert({ user_id: user.id, latitude, longitude });
+  // Anche qui traduciamo subito in un nome di luogo leggibile (vedi
+  // /api/locations/track): questo endpoint scatta solo all'apertura
+  // dell'app, quindi il volume di richieste resta basso.
+  const place_name = await reverseGeocode(latitude, longitude).catch(() => null);
+  await supabase.from("location_checkins").insert({ user_id: user.id, latitude, longitude, place_name });
 
   const { data: nearby } = await supabase.rpc("nearby_intentions", {
     p_user_id: user.id,
