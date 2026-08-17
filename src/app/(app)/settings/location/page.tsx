@@ -6,8 +6,110 @@ import useSWR from "swr";
 
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
+const MAX_TAKEOUT_POINTS = 20000;
+const IMPORT_CHUNK_SIZE = 2000;
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+type Point = { latitude: number; longitude: number; recorded_at: string; place_name?: string };
+
+// Google esporta la cronologia spostamenti in formati diversi a seconda
+// della fonte (Takeout classico "Records.json" oppure export dal telefono
+// con "semanticSegments"). Proviamo a riconoscere entrambi. Il parsing
+// avviene qui, nel browser: mandiamo al server solo i punti già estratti
+// (pochi KB anche per anni di cronologia) invece del file grezzo, che per
+// export lunghi può pesare decine o centinaia di MB e superare il limite
+// di dimensione delle richieste del server.
+function parseLatLng(value: string): { lat: number; lng: number } | null {
+  const match = value.match(/(-?\d+(?:\.\d+)?)°?,\s*(-?\d+(?:\.\d+)?)°?/);
+  if (!match) return null;
+  return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+}
+
+function extractTakeoutPoints(json: unknown): Point[] {
+  const points: Point[] = [];
+  if (!json || typeof json !== "object") return points;
+  const data = json as Record<string, unknown>;
+
+  if (Array.isArray(data.locations)) {
+    for (const raw of data.locations) {
+      const loc = raw as Record<string, unknown>;
+      let lat: number | null = null;
+      let lng: number | null = null;
+
+      if (typeof loc.latitudeE7 === "number" && typeof loc.longitudeE7 === "number") {
+        lat = loc.latitudeE7 / 1e7;
+        lng = loc.longitudeE7 / 1e7;
+      } else if (typeof loc.latLng === "string") {
+        const parsed = parseLatLng(loc.latLng);
+        if (parsed) {
+          lat = parsed.lat;
+          lng = parsed.lng;
+        }
+      }
+
+      const timestamp =
+        typeof loc.timestamp === "string"
+          ? loc.timestamp
+          : typeof loc.timestampMs === "string"
+            ? new Date(Number(loc.timestampMs)).toISOString()
+            : null;
+
+      if (lat != null && lng != null && timestamp) {
+        points.push({ latitude: lat, longitude: lng, recorded_at: timestamp });
+      }
+    }
+  }
+
+  if (Array.isArray(data.semanticSegments)) {
+    for (const raw of data.semanticSegments) {
+      const segment = raw as Record<string, unknown>;
+      const visit = segment.visit as Record<string, unknown> | undefined;
+      const topCandidate = visit?.topCandidate as Record<string, unknown> | undefined;
+      const placeLocation = topCandidate?.placeLocation as Record<string, unknown> | undefined;
+      const latLngValue = placeLocation?.latLng;
+
+      if (typeof latLngValue === "string" && typeof segment.startTime === "string") {
+        const parsed = parseLatLng(latLngValue);
+        if (parsed) {
+          points.push({
+            latitude: parsed.lat,
+            longitude: parsed.lng,
+            recorded_at: segment.startTime,
+            place_name: typeof topCandidate?.semanticType === "string" ? topCandidate.semanticType : undefined,
+          });
+        }
+      }
+    }
+  }
+
+  return points;
+}
+
+// Invia i punti al server a piccoli blocchi, così anche export enormi non
+// creano un'unica richiesta troppo grande e l'utente vede un avanzamento.
+async function sendPointsInChunks(
+  points: Point[],
+  source: "import" | "photo",
+  onProgress: (inserted: number, total: number) => void
+): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < points.length; i += IMPORT_CHUNK_SIZE) {
+    const chunk = points.slice(i, i + IMPORT_CHUNK_SIZE);
+    const res = await fetch("/api/locations/import-points", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ points: chunk, source }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(inserted > 0 ? `partial:${inserted}` : data?.error || "import_failed");
+    }
+    inserted += data.inserted ?? chunk.length;
+    onProgress(inserted, points.length);
+  }
+  return inserted;
+}
 
 export default function LocationSettingsPage() {
   const [importing, setImporting] = useState(false);
@@ -103,21 +205,35 @@ export default function LocationSettingsPage() {
     setImportError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/locations/import", { method: "POST", body: formData });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setImportError(data?.error === "no_points_found"
-          ? "Non ho trovato spostamenti in questo file. Controlla di aver esportato il file corretto da Google Takeout."
-          : "Importazione fallita. Riprova.");
-      } else {
-        setImportMessage(`Importati ${data.inserted} spostamenti.`);
+      let json: unknown;
+      try {
+        json = JSON.parse(await file.text());
+      } catch {
+        setImportError(
+          "Il file non è un JSON valido. Assicurati di aver esportato il file corretto da Google Takeout."
+        );
+        return;
       }
-    } catch {
-      setImportError("Errore di connessione durante l'importazione.");
+
+      const points = extractTakeoutPoints(json).slice(0, MAX_TAKEOUT_POINTS);
+      if (points.length === 0) {
+        setImportError(
+          "Non ho trovato spostamenti in questo file. Controlla di aver esportato il file corretto da Google Takeout."
+        );
+        return;
+      }
+
+      const inserted = await sendPointsInChunks(points, "import", (done, total) =>
+        setImportMessage(`Importazione in corso… ${done}/${total}`)
+      );
+      setImportMessage(`Importati ${inserted} spostamenti.`);
+    } catch (err: any) {
+      const msg = String(err?.message ?? "");
+      setImportError(
+        msg.startsWith("partial:")
+          ? `Importazione interrotta dopo ${msg.split(":")[1]} spostamenti. Riprova per completare.`
+          : "Importazione fallita. Controlla la connessione e riprova."
+      );
     } finally {
       setImporting(false);
       e.target.value = "";
@@ -135,10 +251,21 @@ export default function LocationSettingsPage() {
     try {
       // L'analisi EXIF avviene interamente sul telefono: le foto non vengono
       // mai caricate, estraiamo solo posizione e data/ora dagli scatti che
-      // le contengono (molti screenshot o foto con posizione disattivata
-      // non ne hanno, e vengono semplicemente ignorati).
-      const exifr = (await import("exifr")).default;
-      const points: { latitude: number; longitude: number; recorded_at: string }[] = [];
+      // le contengono (screenshot o foto scaricate da chat di solito non ne
+      // hanno, e vengono semplicemente ignorati).
+      let exifr: any;
+      try {
+        const mod: any = await import("exifr");
+        exifr = mod?.default ?? mod;
+        if (!exifr?.gps) throw new Error("exifr_not_available");
+      } catch (err) {
+        console.error("Impossibile caricare il modulo di analisi foto", err);
+        setPhotoImportError("Impossibile avviare l'analisi delle foto. Controlla la connessione e riprova.");
+        return;
+      }
+
+      const points: Point[] = [];
+      let unreadable = 0;
 
       for (const file of files) {
         try {
@@ -158,36 +285,30 @@ export default function LocationSettingsPage() {
             longitude: gps.longitude,
             recorded_at: takenAt.toISOString(),
           });
-        } catch {
-          // singola foto illeggibile o senza EXIF: la saltiamo senza bloccare le altre
+        } catch (err) {
+          unreadable++;
+          console.error("Foto illeggibile", file.name, err);
         }
       }
 
       if (points.length === 0) {
         setPhotoImportError(
-          "Nessuna delle foto selezionate contiene dati di posizione (GPS). Gli screenshot o le foto con la posizione disattivata non ne hanno."
+          unreadable === files.length
+            ? "Non sono riuscito ad analizzare queste foto. Prova con foto scattate direttamente dalla fotocamera (non screenshot o immagini scaricate da una chat)."
+            : "Nessuna delle foto selezionate contiene dati di posizione (GPS). Gli screenshot o le foto con la posizione disattivata non ne hanno."
         );
         return;
       }
 
-      const res = await fetch("/api/locations/import-photos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setPhotoImportError("Importazione fallita. Riprova.");
-      } else {
-        const skipped = files.length - points.length;
-        setPhotoImportMessage(
-          `Importati ${data.inserted} spostamenti da foto` +
-            (skipped > 0 ? ` (${skipped} foto senza dati di posizione ignorate).` : ".")
-        );
-      }
-    } catch {
-      setPhotoImportError("Errore durante l'analisi delle foto.");
+      const inserted = await sendPointsInChunks(points, "photo", () => {});
+      const skipped = files.length - points.length;
+      setPhotoImportMessage(
+        `Importati ${inserted} spostamenti da foto` +
+          (skipped > 0 ? ` (${skipped} foto senza dati di posizione ignorate).` : ".")
+      );
+    } catch (err) {
+      console.error(err);
+      setPhotoImportError("Errore durante l'analisi delle foto. Riprova.");
     } finally {
       setPhotoImporting(false);
       e.target.value = "";
@@ -238,7 +359,8 @@ export default function LocationSettingsPage() {
           <p className="font-medium">Importa da Google Maps</p>
           <p className="text-sm text-white/50 mt-1">
             Scarica la tua cronologia spostamenti da Google Takeout (o dall&apos;export Timeline
-            del telefono) e caricala qui per importarla in IMRECALL.
+            del telefono) e caricala qui per importarla in IMRECALL. Il file viene letto sul
+            telefono: anche export molto grandi funzionano.
           </p>
         </div>
 
@@ -262,9 +384,9 @@ export default function LocationSettingsPage() {
           <p className="font-medium">Importa dalle foto</p>
           <p className="text-sm text-white/50 mt-1">
             Seleziona foto dalla galleria: se contengono la posizione (GPS), la aggiungiamo ai
-            tuoi spostamenti. Utile per ricostruire dove eri nei giorni prima di attivare il
-            tracciamento o l&apos;import da Maps. Le foto restano sul telefono, non vengono
-            caricate.
+            tuoi spostamenti. Funziona con le foto scattate dalla fotocamera con i servizi di
+            localizzazione attivi — screenshot e immagini scaricate da chat di solito non hanno
+            questo dato. Le foto restano sul telefono, non vengono caricate.
           </p>
         </div>
 
