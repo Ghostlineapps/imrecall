@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import useSWR from "swr";
 import { createClient } from "@/lib/supabase/client";
 
@@ -29,6 +30,11 @@ export default function SettingsPage() {
           </p>
         )}
       </div>
+
+      <Link href="/settings/location" className="card block">
+        <p className="font-medium">Spostamenti</p>
+        <p className="text-xs text-white/40 mt-1">Importa da Google Maps e tracciamento live</p>
+      </Link>
 
       <button onClick={handleLogout} className="btn-ghost text-sm">
         Esci
