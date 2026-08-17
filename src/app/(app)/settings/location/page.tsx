@@ -6,7 +6,7 @@ import useSWR from "swr";
 
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
-const MAX_TAKEOUT_POINTS = 20000;
+const MAX_TAKEOUT_POINTS = 60000;
 const IMPORT_CHUNK_SIZE = 2000;
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -127,6 +127,23 @@ function extractTakeoutPoints(json: unknown): Point[] {
   }
 
   return points;
+}
+
+// Se l'export ha più punti del limite, NON possiamo semplicemente troncare
+// i primi N: gli export multi-anno sono in ordine cronologico, quindi
+// tagliare "i primi 20000" scartava sistematicamente tutti gli anni più
+// recenti (è esattamente il motivo per cui "Dove mi trovavo?" non trovava
+// nulla per date recenti, pur avendo importato 20000 punti). Campioniamo
+// invece in modo uniforme su tutto l'intervallo temporale, così la
+// copertura resta dagli anni più vecchi fino ad oggi.
+function capPoints(points: Point[], max: number): Point[] {
+  if (points.length <= max) return points;
+  const step = points.length / max;
+  const sampled: Point[] = [];
+  for (let i = 0; i < max; i++) {
+    sampled.push(points[Math.floor(i * step)]);
+  }
+  return sampled;
 }
 
 // Invia i punti al server a piccoli blocchi, così anche export enormi non
@@ -258,7 +275,7 @@ export default function LocationSettingsPage() {
         return;
       }
 
-      const points = extractTakeoutPoints(json).slice(0, MAX_TAKEOUT_POINTS);
+      const points = capPoints(extractTakeoutPoints(json), MAX_TAKEOUT_POINTS);
       if (points.length === 0) {
         setImportError(
           "Non ho trovato spostamenti in questo file. Controlla di aver esportato il file corretto da Google Takeout."
