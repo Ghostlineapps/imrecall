@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function LocationSettingsPage() {
   const [importing, setImporting] = useState(false);
@@ -15,6 +18,15 @@ export default function LocationSettingsPage() {
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [lastPing, setLastPing] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const { data: locationsData } = useSWR("/api/locations?limit=50", fetcher);
+  const locations = locationsData?.locations ?? [];
+
+  const [searchDate, setSearchDate] = useState("");
+  const [searchTime, setSearchTime] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResult, setSearchResult] = useState<any>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(TRACKING_STORAGE_KEY);
@@ -108,6 +120,35 @@ export default function LocationSettingsPage() {
     }
   }
 
+  async function handleSearch() {
+    if (!searchDate || !searchTime) {
+      setSearchError("Inserisci sia la data che l'ora.");
+      return;
+    }
+
+    setSearching(true);
+    setSearchError(null);
+    setSearchResult(null);
+
+    try {
+      const at = new Date(`${searchDate}T${searchTime}:00`).toISOString();
+      const res = await fetch(`/api/locations/at?at=${encodeURIComponent(at)}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setSearchError("Ricerca fallita. Riprova.");
+      } else if (!data.match) {
+        setSearchError("Nessuno spostamento registrato vicino a quel momento.");
+      } else {
+        setSearchResult(data.match);
+      }
+    } catch {
+      setSearchError("Errore di connessione durante la ricerca.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
   return (
     <div className="px-4 pt-6 space-y-6">
       <div className="flex items-center gap-2">
@@ -160,6 +201,74 @@ export default function LocationSettingsPage() {
           <p className="text-sm text-white/40">Ultima posizione salvata alle {lastPing}</p>
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
+      </div>
+
+      <div className="card space-y-3">
+        <div>
+          <p className="font-medium">Dove mi trovavo?</p>
+          <p className="text-sm text-white/50 mt-1">
+            Scegli data e ora: IMRECALL cerca lo spostamento registrato più vicino a quel momento.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="date"
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+            className="input-field flex-1"
+          />
+          <input
+            type="time"
+            value={searchTime}
+            onChange={(e) => setSearchTime(e.target.value)}
+            className="input-field flex-1"
+          />
+        </div>
+
+        <button onClick={handleSearch} disabled={searching} className="btn-primary w-full">
+          {searching ? "Cerco…" : "Cerca"}
+        </button>
+
+        {searchError && <p className="text-urgent text-sm">{searchError}</p>}
+
+        {searchResult && (
+          <div className="pt-2 border-t border-white/10">
+            <p className="text-sm">
+              {searchResult.place_name || `${searchResult.latitude.toFixed(5)}, ${searchResult.longitude.toFixed(5)}`}
+            </p>
+            <p className="text-xs text-white/40 mt-1">
+              Registrato alle {new Date(searchResult.recorded_at).toLocaleString("it-IT")}
+              {searchResult.diff_minutes > 15 &&
+                ` (~${searchResult.diff_minutes} minuti dall'orario cercato)`}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="font-medium px-1">I tuoi ultimi spostamenti</p>
+
+        {locations.length === 0 && (
+          <p className="text-sm text-white/40 px-1">
+            Nessuno spostamento registrato ancora. Importa da Google Maps o attiva il
+            tracciamento qui sopra.
+          </p>
+        )}
+
+        {locations.map((loc: any) => (
+          <div key={loc.id} className="card py-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-sm">
+                {loc.place_name || `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}`}
+              </p>
+              <p className="text-xs text-white/40 mt-0.5">
+                {new Date(loc.recorded_at).toLocaleString("it-IT")}
+              </p>
+            </div>
+            <span className="text-xs text-white/30 capitalize">{loc.source}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
