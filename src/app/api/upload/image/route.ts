@@ -8,7 +8,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const VISION_PROMPT = `Descrivi questa immagine in italiano in 1-2 frasi. Se contiene testo
 leggibile (documento, cartello, ricevuta, scadenza), trascrivilo integralmente.
 Se l'immagine è un documento con una data di scadenza chiaramente visibile
-(bollo, assicurazione, avviso fiscale, abbonamento), aggiungi alla fine una riga
+(bollo, assicurazione, avviso fiscale, abbonamento, patente, carta d'identità,
+passaporto, tessera sanitaria o qualsiasi altro documento con scadenza),
+aggiungi alla fine una riga
 nel formato: DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
 Se non è un documento con scadenza, ometti quella riga.`;
 
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
         role: "user",
         content: [
           { type: "text", text: VISION_PROMPT },
-          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "low" } },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" } },
         ],
       },
     ],
