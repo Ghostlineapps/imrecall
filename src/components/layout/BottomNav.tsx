@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, MessageCircle, Clock, CalendarClock, Settings } from "lucide-react";
+import { Home, MessageCircle, Clock, CalendarDays, CalendarClock, Settings } from "lucide-react";
 import clsx from "clsx";
 
+// "Ricordi" (ex "Timeline") mostra tutte le memorie catturate — è stato
+// rinominato perché il nome "Timeline" veniva confuso con la timeline degli
+// spostamenti in Impostazioni → Spostamenti. "Appuntamenti" è distinto dalle
+// "Scadenze": impegni con data e ora precisa (spesso da screenshot di chat),
+// non documenti con rinnovo periodico.
 const ITEMS = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/timeline", label: "Timeline", icon: Clock },
+  { href: "/timeline", label: "Ricordi", icon: Clock },
+  { href: "/appointments", label: "Appunt.", icon: CalendarDays },
   { href: "/deadlines", label: "Scadenze", icon: CalendarClock },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
