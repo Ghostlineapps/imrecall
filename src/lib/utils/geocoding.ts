@@ -1,37 +1,36 @@
 /**
- * Geocodifica un nome di luogo in coordinate. Usa un provider esterno
- * (es. Google Geocoding API o Mapbox — configurabile via GEOCODING_API_KEY).
- * Qui implementato contro l'API Mapbox per semplicità; sostituibile.
+ * Geocodifica un nome di luogo in coordinate e viceversa. Usiamo Nominatim
+ * (OpenStreetMap), che non richiede una API key — a differenza di Google/
+ * Mapbox, funziona subito senza bisogno di configurare nulla su Vercel.
+ * Nominatim chiede solo un header User-Agent che identifichi l'app e un
+ * uso "leggero" (max ~1 richiesta al secondo), più che sufficiente per un
+ * assistente personale.
  */
+const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
+const USER_AGENT = "IMRECALL-PersonalMemoryApp/1.0 (contatto: mitolo1@gmail.com)";
+
 export async function geocodePlace(
   placeName: string
 ): Promise<{ latitude: number; longitude: number; granularity: string } | null> {
-  const apiKey = process.env.GEOCODING_API_KEY;
-  if (!apiKey) {
-    console.warn("GEOCODING_API_KEY non configurata: geocoding saltato per", placeName);
-    return null;
-  }
-
   try {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-      placeName
-    )}.json?access_token=${apiKey}&limit=1`;
-
-    const res = await fetch(url);
+    const url = `${NOMINATIM_BASE}/search?format=jsonv2&limit=1&q=${encodeURIComponent(placeName)}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, "Accept-Language": "it" },
+    });
     if (!res.ok) return null;
 
-    const data = await res.json();
-    const feature = data.features?.[0];
+    const results = await res.json();
+    const feature = results?.[0];
     if (!feature) return null;
 
-    const [longitude, latitude] = feature.center;
-    const granularity = feature.place_type?.includes("poi")
-      ? "poi"
-      : feature.place_type?.includes("address")
-      ? "address"
-      : "city";
+    const granularity =
+      feature.class === "amenity" || feature.class === "shop" || feature.class === "tourism"
+        ? "poi"
+        : feature.class === "building" || feature.type === "house"
+          ? "address"
+          : "city";
 
-    return { latitude, longitude, granularity };
+    return { latitude: parseFloat(feature.lat), longitude: parseFloat(feature.lon), granularity };
   } catch (err) {
     console.error("Geocoding fallito per", placeName, err);
     return null;
@@ -47,21 +46,25 @@ export async function reverseGeocode(
   latitude: number,
   longitude: number
 ): Promise<string | null> {
-  const apiKey = process.env.GEOCODING_API_KEY;
-  if (!apiKey) {
-    console.warn("GEOCODING_API_KEY non configurata: reverse geocoding saltato");
-    return null;
-  }
-
   try {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${apiKey}&limit=1`;
-
-    const res = await fetch(url);
+    const url = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=17&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, "Accept-Language": "it" },
+    });
     if (!res.ok) return null;
 
     const data = await res.json();
-    const feature = data.features?.[0];
-    return feature?.place_name ?? null;
+    if (data?.error) return null;
+
+    // Costruiamo un nome leggibile e breve (es. "Via Roma 12, Milano")
+    // invece del display_name completo di Nominatim, che è molto lungo
+    // (include provincia, regione, CAP, nazione...).
+    const addr = data.address ?? {};
+    const street = [addr.road, addr.house_number].filter(Boolean).join(" ");
+    const city = addr.city || addr.town || addr.village || addr.municipality;
+    const short = [street, city].filter(Boolean).join(", ");
+
+    return short || data.display_name || null;
   } catch (err) {
     console.error("Reverse geocoding fallito per", latitude, longitude, err);
     return null;
