@@ -39,7 +39,7 @@ export default function TimelinePage() {
 
   return (
     <div className="px-4 pt-6 space-y-5">
-      <h1 className="text-xl font-semibold">Timeline</h1>
+      <h1 className="text-xl font-semibold">Ricordi</h1>
 
       <TimelineFilters filters={filters} onChange={setFilters} />
 
