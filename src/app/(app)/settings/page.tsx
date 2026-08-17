@@ -36,6 +36,11 @@ export default function SettingsPage() {
         <p className="text-xs text-white/40 mt-1">Importa da Google Maps e tracciamento live</p>
       </Link>
 
+      <Link href="/settings/notifications" className="card block">
+        <p className="font-medium">Notifiche</p>
+        <p className="text-xs text-white/40 mt-1">Promemoria scadenze via email e push</p>
+      </Link>
+
       <button onClick={handleLogout} className="btn-ghost text-sm">
         Esci
       </button>
