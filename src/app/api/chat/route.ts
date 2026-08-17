@@ -100,7 +100,7 @@ nulla, in italiano.`;
   });
 
   let fullResponse = "";
-  const stream = OpenAIStream(response, {
+  const stream = OpenAIStream(response as any, {
     onToken: (token) => {
       fullResponse += token;
     },
