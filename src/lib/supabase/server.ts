@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
 export function createClient() {
@@ -36,7 +37,6 @@ export function createClient() {
 // Client con service role, solo per operazioni server-side privilegiate
 // (webhook Stripe, cron job). MAI esporlo al client.
 export function createServiceClient() {
-  const { createClient: createSupabaseClient } = require("@supabase/supabase-js");
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
