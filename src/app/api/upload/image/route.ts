@@ -134,19 +134,30 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Se Vision ha rilevato una scadenza o un appuntamento, li creiamo
+  // automaticamente. Il risultato viene esposto nella risposta (campo
+  // "detected") così il client può mostrare subito una conferma invece di
+  // chiudere in silenzio, lasciando l'utente col dubbio che non sia
+  // successo nulla.
+  let detected: { type: "deadline" | "appointment"; title: string } | null = null;
+
   // Se Vision ha rilevato una scadenza nel documento, la crea automaticamente
   // (cattura intelligente da foto — vedi discussione sulle scadenze)
   if (deadlineMatch) {
     try {
       const parsed = JSON.parse(deadlineMatch[1]);
-      await supabase.from("deadlines").insert({
-        user_id: user.id,
-        memory_id: memory.id,
-        title: parsed.title,
-        due_date: parsed.due_date,
-        category: parsed.category ?? "altro",
-      });
-    } catch {
+      if (parsed?.title && parsed?.due_date) {
+        await supabase.from("deadlines").insert({
+          user_id: user.id,
+          memory_id: memory.id,
+          title: parsed.title,
+          due_date: parsed.due_date,
+          category: parsed.category ?? "altro",
+        });
+        detected = { type: "deadline", title: parsed.title };
+      }
+    } catch (err) {
+      console.error("Parsing DEADLINE_DETECTED fallito", err, deadlineMatch[1]);
       // parsing fallito: la memoria resta comunque salvata, l'utente può
       // creare la scadenza manualmente dalla vista dettaglio
     }
@@ -158,15 +169,24 @@ export async function POST(req: NextRequest) {
   if (appointmentMatch) {
     try {
       const parsed = JSON.parse(appointmentMatch[1]);
-      await supabase.from("appointments").insert({
-        user_id: user.id,
-        memory_id: memory.id,
-        title: parsed.title,
-        appointment_at: romeLocalToUtcIso(parsed.appointment_at),
-        location: parsed.location ?? null,
-        source: "photo",
-      });
-    } catch {
+      const validDate =
+        typeof parsed?.appointment_at === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(parsed.appointment_at);
+
+      if (parsed?.title && validDate) {
+        await supabase.from("appointments").insert({
+          user_id: user.id,
+          memory_id: memory.id,
+          title: parsed.title,
+          appointment_at: romeLocalToUtcIso(parsed.appointment_at),
+          location: parsed.location ?? null,
+          source: "photo",
+        });
+        detected = { type: "appointment", title: parsed.title };
+      } else {
+        console.error("APPOINTMENT_DETECTED con formato inatteso", parsed);
+      }
+    } catch (err) {
+      console.error("Parsing APPOINTMENT_DETECTED fallito", err, appointmentMatch[1]);
       // parsing fallito: la memoria resta comunque salvata, l'utente può
       // creare l'appuntamento manualmente
     }
@@ -174,5 +194,5 @@ export async function POST(req: NextRequest) {
 
   processMemory(memory.id).catch((err) => console.error("processMemory failed", err));
 
-  return NextResponse.json(memory, { status: 201 });
+  return NextResponse.json({ ...memory, detected }, { status: 201 });
 }
