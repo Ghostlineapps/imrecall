@@ -13,41 +13,66 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type Point = { latitude: number; longitude: number; recorded_at: string; place_name?: string };
 
-// Google esporta la cronologia spostamenti in formati diversi a seconda
-// della fonte (Takeout classico "Records.json" oppure export dal telefono
-// con "semanticSegments"). Proviamo a riconoscere entrambi. Il parsing
-// avviene qui, nel browser: mandiamo al server solo i punti già estratti
-// (pochi KB anche per anni di cronologia) invece del file grezzo, che per
-// export lunghi può pesare decine o centinaia di MB e superare il limite
-// di dimensione delle richieste del server.
+// Google esporta la cronologia spostamenti in diversi formati:
+// 1) Takeout classico "Records.json": { locations: [ { latitudeE7, longitudeE7, timestamp } ] }
+// 2) Takeout "Semantic Location History" (dismesso da Google): oggetto con
+//    { timelineObjects: [ { placeVisit: {...} } | { activitySegment: {...} } ] }
+// 3) Nuovo export "Timeline" on-device (Impostazioni → Località → Timeline
+//    → Esporta dati sul telefono): un ARRAY diretto (senza chiave wrapper)
+//    di oggetti { startTime, endTime, visit: { topCandidate: { placeLocation: "geo:lat,lng" } } }
+//    oppure { activity: { start, end } }. Qui "placeLocation" è una STRINGA,
+//    non un oggetto con .latLng come nel formato vecchio.
+// Proviamo a riconoscere tutti. Il parsing avviene qui, nel browser:
+// mandiamo al server solo i punti già estratti (pochi KB anche per anni di
+// cronologia) invece del file grezzo, che per export lunghi può pesare
+// decine o centinaia di MB e superare il limite di dimensione delle
+// richieste del server.
 function parseLatLng(value: string): { lat: number; lng: number } | null {
   const match = value.match(/(-?\d+(?:\.\d+)?)°?,\s*(-?\d+(?:\.\d+)?)°?/);
   if (!match) return null;
   return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
 }
 
+// Un "punto posizione" nei vari formati Google può presentarsi come:
+// - stringa "geo:lat,lng" o "lat,lng" (nuovo export Timeline)
+// - oggetto { latLng: "lat,lng" } (vecchio formato)
+// - oggetto { latitudeE7, longitudeE7 } (Records.json / placeVisit vecchio)
+// - oggetto { placeLocation: <uno dei precedenti> } (per comodità, ricorsivo)
+function extractLatLng(value: unknown): { lat: number; lng: number } | null {
+  if (typeof value === "string") return parseLatLng(value);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.latitudeE7 === "number" && typeof obj.longitudeE7 === "number") {
+      return { lat: obj.latitudeE7 / 1e7, lng: obj.longitudeE7 / 1e7 };
+    }
+    if (typeof obj.latLng === "string") return parseLatLng(obj.latLng);
+    if ("placeLocation" in obj) return extractLatLng(obj.placeLocation);
+  }
+  return null;
+}
+
+// Trova l'array di "segmenti" (visite/spostamenti) qualunque sia la chiave
+// che lo contiene — o restituisce direttamente il JSON se è già un array
+// (caso del nuovo export on-device, che non ha alcuna chiave wrapper).
+function segmentsArrayFrom(json: unknown): unknown[] {
+  if (Array.isArray(json)) return json;
+  if (json && typeof json === "object") {
+    const data = json as Record<string, unknown>;
+    if (Array.isArray(data.semanticSegments)) return data.semanticSegments;
+    if (Array.isArray(data.timelineObjects)) return data.timelineObjects;
+  }
+  return [];
+}
+
 function extractTakeoutPoints(json: unknown): Point[] {
   const points: Point[] = [];
-  if (!json || typeof json !== "object") return points;
-  const data = json as Record<string, unknown>;
+  if (!json) return points;
 
-  if (Array.isArray(data.locations)) {
-    for (const raw of data.locations) {
+  // Formato Takeout "classico" (Records.json)
+  if (json && typeof json === "object" && Array.isArray((json as Record<string, unknown>).locations)) {
+    for (const raw of (json as Record<string, unknown>).locations as unknown[]) {
       const loc = raw as Record<string, unknown>;
-      let lat: number | null = null;
-      let lng: number | null = null;
-
-      if (typeof loc.latitudeE7 === "number" && typeof loc.longitudeE7 === "number") {
-        lat = loc.latitudeE7 / 1e7;
-        lng = loc.longitudeE7 / 1e7;
-      } else if (typeof loc.latLng === "string") {
-        const parsed = parseLatLng(loc.latLng);
-        if (parsed) {
-          lat = parsed.lat;
-          lng = parsed.lng;
-        }
-      }
-
+      const parsed = extractLatLng(loc);
       const timestamp =
         typeof loc.timestamp === "string"
           ? loc.timestamp
@@ -55,30 +80,48 @@ function extractTakeoutPoints(json: unknown): Point[] {
             ? new Date(Number(loc.timestampMs)).toISOString()
             : null;
 
-      if (lat != null && lng != null && timestamp) {
-        points.push({ latitude: lat, longitude: lng, recorded_at: timestamp });
+      if (parsed && timestamp) {
+        points.push({ latitude: parsed.lat, longitude: parsed.lng, recorded_at: timestamp });
       }
     }
   }
 
-  if (Array.isArray(data.semanticSegments)) {
-    for (const raw of data.semanticSegments) {
-      const segment = raw as Record<string, unknown>;
-      const visit = segment.visit as Record<string, unknown> | undefined;
-      const topCandidate = visit?.topCandidate as Record<string, unknown> | undefined;
-      const placeLocation = topCandidate?.placeLocation as Record<string, unknown> | undefined;
-      const latLngValue = placeLocation?.latLng;
+  // Formato a segmenti: nuovo export on-device (array diretto, chiavi
+  // "visit"/"activity") oppure vecchio Semantic Location History
+  // (dentro "timelineObjects", chiavi "placeVisit"/"activitySegment").
+  for (const raw of segmentsArrayFrom(json)) {
+    const segment = raw as Record<string, unknown>;
+    const startTime =
+      typeof segment.startTime === "string"
+        ? segment.startTime
+        : typeof segment.startTimestamp === "string"
+          ? segment.startTimestamp
+          : undefined;
 
-      if (typeof latLngValue === "string" && typeof segment.startTime === "string") {
-        const parsed = parseLatLng(latLngValue);
-        if (parsed) {
-          points.push({
-            latitude: parsed.lat,
-            longitude: parsed.lng,
-            recorded_at: segment.startTime,
-            place_name: typeof topCandidate?.semanticType === "string" ? topCandidate.semanticType : undefined,
-          });
-        }
+    const visit = (segment.visit ?? segment.placeVisit) as Record<string, unknown> | undefined;
+    if (visit && startTime) {
+      const topCandidate = visit.topCandidate as Record<string, unknown> | undefined;
+      const parsed =
+        (topCandidate && extractLatLng(topCandidate.placeLocation)) ??
+        extractLatLng(visit.location) ??
+        extractLatLng(visit);
+      const placeName =
+        (topCandidate && typeof topCandidate.semanticType === "string" ? topCandidate.semanticType : undefined) ??
+        (visit.location && typeof (visit.location as Record<string, unknown>).name === "string"
+          ? ((visit.location as Record<string, unknown>).name as string)
+          : undefined);
+
+      if (parsed) {
+        points.push({ latitude: parsed.lat, longitude: parsed.lng, recorded_at: startTime, place_name: placeName });
+      }
+    }
+
+    const activity = (segment.activity ?? segment.activitySegment) as Record<string, unknown> | undefined;
+    if (activity && startTime) {
+      const parsed =
+        extractLatLng(activity.start) ?? extractLatLng((activity as Record<string, unknown>).startLocation);
+      if (parsed) {
+        points.push({ latitude: parsed.lat, longitude: parsed.lng, recorded_at: startTime });
       }
     }
   }
