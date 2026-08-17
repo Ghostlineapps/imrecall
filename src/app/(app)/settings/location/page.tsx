@@ -14,6 +14,10 @@ export default function LocationSettingsPage() {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
+  const [photoImporting, setPhotoImporting] = useState(false);
+  const [photoImportMessage, setPhotoImportMessage] = useState<string | null>(null);
+  const [photoImportError, setPhotoImportError] = useState<string | null>(null);
+
   const [tracking, setTracking] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [lastPing, setLastPing] = useState<string | null>(null);
@@ -120,6 +124,76 @@ export default function LocationSettingsPage() {
     }
   }
 
+  async function handlePhotoImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    setPhotoImporting(true);
+    setPhotoImportMessage(null);
+    setPhotoImportError(null);
+
+    try {
+      // L'analisi EXIF avviene interamente sul telefono: le foto non vengono
+      // mai caricate, estraiamo solo posizione e data/ora dagli scatti che
+      // le contengono (molti screenshot o foto con posizione disattivata
+      // non ne hanno, e vengono semplicemente ignorati).
+      const exifr = (await import("exifr")).default;
+      const points: { latitude: number; longitude: number; recorded_at: string }[] = [];
+
+      for (const file of files) {
+        try {
+          const gps = await exifr.gps(file);
+          if (!gps || typeof gps.latitude !== "number" || typeof gps.longitude !== "number") continue;
+
+          const meta = await exifr.parse(file, ["DateTimeOriginal", "CreateDate"]);
+          const takenAt: Date =
+            meta?.DateTimeOriginal instanceof Date
+              ? meta.DateTimeOriginal
+              : meta?.CreateDate instanceof Date
+                ? meta.CreateDate
+                : new Date(file.lastModified);
+
+          points.push({
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            recorded_at: takenAt.toISOString(),
+          });
+        } catch {
+          // singola foto illeggibile o senza EXIF: la saltiamo senza bloccare le altre
+        }
+      }
+
+      if (points.length === 0) {
+        setPhotoImportError(
+          "Nessuna delle foto selezionate contiene dati di posizione (GPS). Gli screenshot o le foto con la posizione disattivata non ne hanno."
+        );
+        return;
+      }
+
+      const res = await fetch("/api/locations/import-photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPhotoImportError("Importazione fallita. Riprova.");
+      } else {
+        const skipped = files.length - points.length;
+        setPhotoImportMessage(
+          `Importati ${data.inserted} spostamenti da foto` +
+            (skipped > 0 ? ` (${skipped} foto senza dati di posizione ignorate).` : ".")
+        );
+      }
+    } catch {
+      setPhotoImportError("Errore durante l'analisi delle foto.");
+    } finally {
+      setPhotoImporting(false);
+      e.target.value = "";
+    }
+  }
+
   async function handleSearch() {
     if (!searchDate || !searchTime) {
       setSearchError("Inserisci sia la data che l'ora.");
@@ -181,6 +255,33 @@ export default function LocationSettingsPage() {
 
         {importMessage && <p className="text-sm text-primary-light">{importMessage}</p>}
         {importError && <p className="text-urgent text-sm">{importError}</p>}
+      </div>
+
+      <div className="card space-y-3">
+        <div>
+          <p className="font-medium">Importa dalle foto</p>
+          <p className="text-sm text-white/50 mt-1">
+            Seleziona foto dalla galleria: se contengono la posizione (GPS), la aggiungiamo ai
+            tuoi spostamenti. Utile per ricostruire dove eri nei giorni prima di attivare il
+            tracciamento o l&apos;import da Maps. Le foto restano sul telefono, non vengono
+            caricate.
+          </p>
+        </div>
+
+        <label className="btn-primary w-full text-center cursor-pointer inline-block">
+          {photoImporting ? "Analisi in corso…" : "Scegli foto"}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handlePhotoImport}
+            disabled={photoImporting}
+            className="hidden"
+          />
+        </label>
+
+        {photoImportMessage && <p className="text-sm text-primary-light">{photoImportMessage}</p>}
+        {photoImportError && <p className="text-urgent text-sm">{photoImportError}</p>}
       </div>
 
       <div className="card space-y-3">
@@ -251,7 +352,7 @@ export default function LocationSettingsPage() {
 
         {locations.length === 0 && (
           <p className="text-sm text-white/40 px-1">
-            Nessuno spostamento registrato ancora. Importa da Google Maps o attiva il
+            Nessuno spostamento registrato ancora. Importa da Google Maps, dalle foto o attiva il
             tracciamento qui sopra.
           </p>
         )}
