@@ -1,7 +1,7 @@
 import { TodayCard } from "@/components/home/TodayCard";
 import { StreakBadge } from "@/components/home/StreakBadge";
-import { RecentMemories } from "@/components/home/RecentMemories";
 import { NearbyForYou } from "@/components/home/NearbyForYou";
+import { LocationStatusCard } from "@/components/home/LocationStatusCard";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -34,7 +34,11 @@ export default async function HomePage() {
 
       <NearbyForYou />
 
-      <RecentMemories />
+      {/* Punto d'ingresso per gli Spostamenti, non più solo dentro
+          Impostazioni. Niente elenco "ultimi ricordi" qui: quello è il
+          lavoro della tab Ricordi — Home resta sul "adesso", non un
+          duplicato dell'archivio. */}
+      <LocationStatusCard />
     </div>
   );
 }
