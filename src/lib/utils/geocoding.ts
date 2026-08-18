@@ -58,13 +58,20 @@ export async function reverseGeocode(
 
     // Costruiamo un nome leggibile e breve (es. "Via Roma 12, Milano")
     // invece del display_name completo di Nominatim, che è molto lungo
-    // (include provincia, regione, CAP, nazione...).
+    // (include provincia, regione, CAP, nazione...). In zone dove Nominatim
+    // non ha una via/città precisa (parchi, aree rurali, punti isolati) non
+    // vogliamo mostrare "niente" o le sole coordinate: la stessa risposta
+    // include comunque quasi sempre la gerarchia amministrativa completa
+    // (regione, nazione), quindi scaliamo di livello invece di arrenderci.
     const addr = data.address ?? {};
     const street = [addr.road, addr.house_number].filter(Boolean).join(" ");
     const city = addr.city || addr.town || addr.village || addr.municipality;
+    const region = addr.state || addr.county;
+    const country = addr.country;
+
     const short = [street, city].filter(Boolean).join(", ");
 
-    return short || data.display_name || null;
+    return short || city || region || country || data.display_name || null;
   } catch (err) {
     console.error("Reverse geocoding fallito per", latitude, longitude, err);
     return null;
