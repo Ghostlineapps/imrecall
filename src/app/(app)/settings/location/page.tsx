@@ -376,8 +376,8 @@ export default function LocationSettingsPage() {
   }
 
   async function handleSearch() {
-    if (!searchDate || !searchTime) {
-      setSearchError("Inserisci sia la data che l'ora.");
+    if (!searchDate) {
+      setSearchError("Inserisci almeno la data.");
       return;
     }
 
@@ -386,7 +386,12 @@ export default function LocationSettingsPage() {
     setSearchResult(null);
 
     try {
-      const at = new Date(`${searchDate}T${searchTime}:00`).toISOString();
+      // L'ora è opzionale: se non specificata, cerchiamo lo spostamento più
+      // vicino a mezzogiorno di quel giorno. Non è "l'ora esatta", ma è
+      // un'ancora ragionevole per trovare il punto registrato più
+      // rappresentativo di quella data senza costringere l'utente a
+      // ricordare un orario preciso che spesso non conosce.
+      const at = new Date(`${searchDate}T${searchTime || "12:00"}:00`).toISOString();
       const res = await fetch(`/api/locations/at?at=${encodeURIComponent(at)}`);
       const data = await res.json();
 
@@ -490,7 +495,8 @@ export default function LocationSettingsPage() {
         <div>
           <p className="font-medium">Dove mi trovavo?</p>
           <p className="text-sm text-white/50 mt-1">
-            Scegli data e ora: IMRECALL cerca lo spostamento registrato più vicino a quel momento.
+            Scegli una data (l&apos;ora è facoltativa): IMRECALL cerca lo spostamento registrato
+            più vicino a quel momento.
           </p>
         </div>
 
@@ -505,6 +511,7 @@ export default function LocationSettingsPage() {
             type="time"
             value={searchTime}
             onChange={(e) => setSearchTime(e.target.value)}
+            placeholder="Opzionale"
             className="input-field flex-1"
           />
         </div>
