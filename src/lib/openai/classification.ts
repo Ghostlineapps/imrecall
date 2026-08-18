@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "./embeddings";
-import { geocodePlace } from "@/lib/utils/geocoding";
+import { geocodePlace, reverseGeocode } from "@/lib/utils/geocoding";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -157,6 +157,59 @@ async function geocodeAndLinkPlace(
         longitude: geo?.longitude ?? null,
         granularity: geo?.granularity ?? "city",
         geocoded_at: geo ? new Date().toISOString() : null,
+      })
+      .select()
+      .single();
+    place = newPlace;
+  }
+
+  if (place) {
+    await supabase.from("memory_places").upsert({ memory_id: memoryId, place_id: place.id });
+  }
+}
+
+/**
+ * Collega una memoria a un luogo a partire da coordinate GPS reali (es. EXIF
+ * di una foto o posizione del dispositivo al momento dello scatto), invece
+ * che dal nome menzionato nel testo. È questo il collegamento che rende
+ * possibile il caso d'uso originale del prodotto: fotografo un ristorante,
+ * l'app registra dove; mesi dopo, tornando lì vicino, nearby_memories()
+ * (vedi migrazione 012) può risalire a quella foto e riproporla.
+ *
+ * Dedup per normalized_name come in geocodeAndLinkPlace: se il reverse
+ * geocoding restituisce lo stesso indirizzo breve di un luogo già salvato,
+ * riusa quella riga invece di crearne una nuova identica.
+ */
+export async function geocodeAndLinkPlaceByCoords(
+  supabase: ReturnType<typeof createServiceClient>,
+  userId: string,
+  memoryId: string,
+  latitude: number,
+  longitude: number
+) {
+  const placeName = await reverseGeocode(latitude, longitude);
+  if (!placeName) return;
+
+  const normalized = placeName.toLowerCase().trim();
+
+  let { data: place } = await supabase
+    .from("places")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("normalized_name", normalized)
+    .single();
+
+  if (!place) {
+    const { data: newPlace } = await supabase
+      .from("places")
+      .insert({
+        user_id: userId,
+        name: placeName,
+        normalized_name: normalized,
+        latitude,
+        longitude,
+        granularity: "poi", // coordinate dirette dal dispositivo, non un nome geocodificato
+        geocoded_at: new Date().toISOString(),
       })
       .select()
       .single();
