@@ -1,6 +1,7 @@
 import { TodayCard } from "@/components/home/TodayCard";
 import { StreakBadge } from "@/components/home/StreakBadge";
 import { RecentMemories } from "@/components/home/RecentMemories";
+import { NearbyForYou } from "@/components/home/NearbyForYou";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -30,6 +31,8 @@ export default async function HomePage() {
           on_this_day / proximity / deadline / pre_trip in base a cosa ha
           priorità più alta oggi (vedi /api/insights/today). */}
       <TodayCard />
+
+      <NearbyForYou />
 
       <RecentMemories />
     </div>
