@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
-import { processMemory } from "@/lib/openai/classification";
+import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classification";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -79,6 +79,16 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "no_file" }, { status: 400 });
+
+  // Coordinate GPS dello scatto, se il client è riuscito a estrarle (EXIF o,
+  // in mancanza, posizione del dispositivo — vedi ImageCapture.tsx). Non
+  // sono obbligatorie: molte foto (screenshot, immagini scaricate) non ne
+  // hanno, e la memoria viene comunque creata normalmente.
+  const rawLat = formData.get("latitude");
+  const rawLon = formData.get("longitude");
+  const latitude = typeof rawLat === "string" ? parseFloat(rawLat) : NaN;
+  const longitude = typeof rawLon === "string" ? parseFloat(rawLon) : NaN;
+  const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
 
   if (file.size > 10 * 1024 * 1024) {
     return NextResponse.json({ error: "file_too_large", max_mb: 10 }, { status: 413 });
@@ -190,6 +200,18 @@ export async function POST(req: NextRequest) {
       // parsing fallito: la memoria resta comunque salvata, l'utente può
       // creare l'appuntamento manualmente
     }
+  }
+
+  // Collega subito la foto al luogo (se abbiamo le coordinate): è quello
+  // che rende possibile il resurfacing "sei tornato dove hai scattato
+  // questa foto" — vedi nearby_memories() e /api/checkin. Fatto qui,
+  // sincrono, perché la geocodifica di una singola coordinata è veloce e
+  // vogliamo che il collegamento esista anche se processMemory (asincrono,
+  // con retry) dovesse fallire più volte.
+  if (hasCoords) {
+    await geocodeAndLinkPlaceByCoords(supabase, user.id, memory.id, latitude, longitude).catch((err) =>
+      console.error("geocodeAndLinkPlaceByCoords failed", err)
+    );
   }
 
   processMemory(memory.id).catch((err) => console.error("processMemory failed", err));
