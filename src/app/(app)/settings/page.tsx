@@ -31,6 +31,11 @@ export default function SettingsPage() {
         )}
       </div>
 
+      <Link href="/settings/profile" className="card block">
+        <p className="font-medium">Il tuo profilo</p>
+        <p className="text-xs text-white/40 mt-1">Alimentazione e interessi, per i consigli nei paraggi</p>
+      </Link>
+
       <Link href="/settings/location" className="card block">
         <p className="font-medium">Spostamenti</p>
         <p className="text-xs text-white/40 mt-1">Importa da Google Maps e tracciamento live</p>
