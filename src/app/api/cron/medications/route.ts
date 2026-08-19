@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendPushToUser } from "@/lib/push/server";
 import { nowInRome } from "@/lib/utils/romeTime";
+import { medicationDueOn } from "@/lib/medications/recurrence";
 
 // Chiamato ogni minuto da pg_cron DENTRO il database Supabase — non dal
 // cron di Vercel, che sul piano Hobby può girare al massimo una volta al
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
   const supabase = createServiceClient();
   const { date: today, time: nowTime } = nowInRome();
 
-  const { data: medications, error } = await supabase
+  const { data: medicationsAtTime, error } = await supabase
     .from("medications")
     .select("*")
     .eq("active", true)
@@ -27,9 +28,14 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // L'orario può combaciare (times contiene nowTime) ma il farmaco non
+  // essere comunque dovuto OGGI — es. insulina settimanale il lunedì, oggi
+  // è mercoledì: niente promemoria, anche se l'orario è quello giusto.
+  const medications = (medicationsAtTime ?? []).filter((m) => medicationDueOn(m, today));
+
   let sent = 0;
 
-  for (const m of medications ?? []) {
+  for (const m of medications) {
     // Evita reinvii se pg_cron chiama più volte nello stesso minuto (o con
     // un piccolo ritardo che fa ricadere due invocazioni sullo stesso
     // orario di promemoria).
