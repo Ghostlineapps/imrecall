@@ -2,21 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, MessageCircle, Clock, CalendarDays, CalendarClock, Settings } from "lucide-react";
+import { Home, HelpCircle } from "lucide-react";
 import clsx from "clsx";
 
-// "Ricordi" (ex "Timeline") mostra tutte le memorie catturate — è stato
-// rinominato perché il nome "Timeline" veniva confuso con la timeline degli
-// spostamenti in Impostazioni → Spostamenti. "Appuntamenti" è distinto dalle
-// "Scadenze": impegni con data e ora precisa (spesso da screenshot di chat),
-// non documenti con rinnovo periodico.
+// Ridotta da 6 a 2 voci: Chat/Ricordi/Calendario/Scadenze/Impostazioni sono
+// già raggiungibili dal cerchio in Dashboard (DashboardHub.tsx) — tenerle
+// anche qui era una barra ridondante che duplicava il cerchio senza motivo.
+// Restano solo le due cose che il cerchio non copre: tornare alla Dashboard
+// da qualunque altra schermata, e la guida rapida per chi non ha capito
+// cosa fa un pulsante (il problema che ha fatto partire questo redesign).
 const ITEMS = [
   { href: "/home", label: "Dashboard", icon: Home },
-  { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/timeline", label: "Ricordi", icon: Clock },
-  { href: "/appointments", label: "Calendario", icon: CalendarDays },
-  { href: "/deadlines", label: "Scadenze", icon: CalendarClock },
-  { href: "/settings", label: "Impostazioni", icon: Settings },
+  { href: "/guide", label: "Istruzioni", icon: HelpCircle },
 ];
 
 export function BottomNav() {
