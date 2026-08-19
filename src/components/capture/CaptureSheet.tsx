@@ -9,8 +9,9 @@ import { MeetingRecorder } from "./MeetingRecorder";
 import { ImageCapture } from "./ImageCapture";
 import { LinkCapture } from "./LinkCapture";
 import { DocumentCapture } from "./DocumentCapture";
+import { MedicationCapture } from "./MedicationCapture";
 
-type Tab = "text" | "audio" | "meeting" | "image" | "link" | "document";
+type Tab = "text" | "audio" | "meeting" | "image" | "link" | "document" | "medication";
 
 export function CaptureSheet({
   open,
@@ -35,7 +36,7 @@ export function CaptureSheet({
       <div className="relative w-full bg-surface rounded-t-3xl p-5 pb-8 animate-fade-in max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-1 bg-white/5 rounded-full p-1 overflow-x-auto">
-            {(["text", "audio", "meeting", "image", "document", "link"] as Tab[]).map((t) => (
+            {(["text", "audio", "meeting", "image", "document", "medication", "link"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -54,7 +55,9 @@ export function CaptureSheet({
                         ? "Foto"
                         : t === "document"
                           ? "File"
-                          : "Link"}
+                          : t === "medication"
+                            ? "Farmaco"
+                            : "Link"}
               </button>
             ))}
           </div>
@@ -68,6 +71,7 @@ export function CaptureSheet({
         {tab === "meeting" && <MeetingRecorder onSaved={onClose} />}
         {tab === "image" && <ImageCapture onSaved={onClose} />}
         {tab === "document" && <DocumentCapture onSaved={onClose} />}
+        {tab === "medication" && <MedicationCapture onSaved={onClose} />}
         {tab === "link" && <LinkCapture onSaved={onClose} />}
       </div>
     </div>
