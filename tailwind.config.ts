@@ -24,6 +24,17 @@ const config: Config = {
         },
         urgent: "#EF4444",
         warn: "#F59E0B",
+        // Palette celeste del nuovo redesign (Dashboard, pulsante di cattura
+        // fluttuante e materiale marketing): non sostituisce ancora la
+        // palette scura usata nel resto dell'app, per ora convive con essa
+        // finché il resign non viene esteso a tutte le schermate.
+        celeste: {
+          bg: "#EAF2F8",
+          accent: "#4C7EA0",
+          accentDark: "#375F7D",
+          navy: "#22384A",
+          muted: "#6B8299",
+        },
       },
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
