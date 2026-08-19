@@ -69,6 +69,11 @@ non serve che tu lo ripeta.
 Se il documento contiene una data di scadenza chiaramente indicata (bollo, assicurazione, abbonamento,
 fattura da pagare, documento con validità, o qualsiasi altra scadenza), aggiungi alla fine una riga:
 DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
+IMPORTANTE: "due_date" deve essere la data in cui la scadenza avviene davvero, MAI la data di inizio
+validità. Se il testo dice "valido/a partire dal X" o "valido per N anni/mesi/giorni a partire dal X",
+X è solo l'inizio: calcola tu la vera scadenza sommando la durata a X (es. "valido per un anno a
+partire dal 19 agosto 2026" → due_date "2027-08-19", non "2026-08-19"). Se manca sia una scadenza
+esplicita sia una durata calcolabile, ometti del tutto la riga DEADLINE_DETECTED.
 
 Se il documento è un invito, una prenotazione o una conferma con data e ora di un appuntamento/evento
 (anche relativa, es. "domani alle 15" — calcolala rispetto a oggi), aggiungi alla fine una riga:
