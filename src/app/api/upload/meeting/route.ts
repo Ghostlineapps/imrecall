@@ -93,6 +93,10 @@ ce ne sono per un argomento)
 
 Se dalla riunione emerge una scadenza chiara (pagamento, consegna, documento con validità...), aggiungi in fondo:
 DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
+IMPORTANTE: "due_date" deve essere la data in cui la scadenza avviene davvero, MAI una data di inizio
+validità. Se si parla di "valido/a partire da X" o "valido per N anni/mesi/giorni a partire da X", X è
+solo l'inizio: calcola tu la vera scadenza sommando la durata a X. Se manca sia una scadenza esplicita
+sia una durata calcolabile, ometti del tutto la riga DEADLINE_DETECTED.
 
 Se emerge un prossimo appuntamento/follow-up con data (anche relativa, es. "ci sentiamo martedì prossimo" —
 calcolala rispetto a oggi), aggiungi in fondo:
