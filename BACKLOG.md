@@ -1,6 +1,6 @@
 # IMRECALL — backlog (idee/fix rimandati, non ancora implementati)
 
-Aggiornato: 2026-08-18
+Aggiornato: 2026-08-19
 
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
@@ -43,25 +43,47 @@ palestre" appare in automatico. Pubblicato e deployato in produzione.
     tre livelli tutto incluso: Silver (base), Gold (premium), Platinum
     (tutti i moduli inclusi, illimitato). Da decidere quale dei due modelli
     (a moduli vs. a livelli) usare — non entrambi assieme, si sovrappongono.
-- [Idea 2026-08-18, corretta] Registrazione riunioni/call con trascrizione,
-  riassunto e "esplosione" dei temi trattati (+ traduzione) — sulla
-  falsariga di dispositivi tipo Plaud/Otter. Limiti ipotizzati per livello:
-  1h/mese Silver, 5h/mese Gold, illimitato Platinum. Per "call" l'utente
-  intende conference call (Zoom/Teams/Google Meet), NON telefonata
-  cellulare — corretto rispetto alla nota precedente.
-  Due percorsi tecnici molto diversi per complessità:
-  1) Cattura via microfono del telefono/laptop appoggiato vicino
-     all'altoparlante durante la call — stesso schema già collaudato con le
-     foto (cattura → Whisper → GPT per riassunto/temi/traduzione). Fattibile
-     come primo MVP, nessun blocco di piattaforma, ma qualità dipende
-     dal setup (se l'utente usa le cuffie, il microfono non capta gli altri
-     partecipanti).
-  2) Integrazione nativa con Zoom/Teams/Google Meet (come fa davvero Otter/
-     Fireflies) — un bot che si unisce alla riunione o cattura l'audio di
-     sistema/della scheda del browser. Molto più solido ma è un progetto a
-     sé: richiede integrazioni/API separate per ogni piattaforma (developer
-     app, OAuth, infrastruttura bot), non è un'estensione della pipeline
-     foto esistente. Da considerare come fase 2, non nello scoping iniziale.
+- [FATTO 2026-08-19] Registrazione riunioni/call con trascrizione, riassunto
+  e "esplosione" dei temi trattati. Chiesto all'utente quale dei due
+  percorsi tecnici descritti sotto implementare: scelto (1) MVP cattura da
+  microfono, NON (2) integrazione nativa Zoom/Teams/Meet (rimandata a fase
+  2, non scoping iniziale). Chiesto anche se estendere il tipo "audio"
+  esistente o crearne uno dedicato: scelto un nuovo tipo "meeting" dedicato.
+  Implementazione:
+  - Migrazione 015: nuovo valore enum `meeting` su `memory_type` (applicata
+    sia via SQL Editor su produzione sia come file di migrazione).
+  - Nessuna nuova migrazione di storage: le registrazioni riusano il bucket
+    "audio" e le sue policy RLS esistenti (stesso schema di path
+    `${user.id}/...`, nessuna distinzione per tipo di memoria).
+  - `src/app/api/upload/meeting/route.ts`: upload su Storage "audio" →
+    trascrizione Whisper (auto-rilevamento lingua, non forzato italiano) →
+    GPT-4o-mini per titolo/riassunto/temi + rilevamento scadenze/
+    appuntamenti (stessa convenzione DEADLINE_DETECTED/APPOINTMENT_DETECTED)
+    → salvataggio memoria (tipo "meeting") + embedding via processMemory().
+    Limiti durata per piano: 30 min free / 90 min premium (valori scelti da
+    me in assenza di piani a pagamento reali, da rivedere quando ci sarà un
+    vero sistema abbonamenti — vedi voce sopra). Limite file 24MB (sotto il
+    tetto di 25MB di Whisper). `maxDuration = 60` per il piano Vercel
+    Hobby, vista la trascrizione+riassunto potenzialmente lunghi.
+  - Traduzione: non è stato costruito un output bilingue separato — GPT
+    genera sempre titolo/riassunto in italiano indipendentemente dalla
+    lingua parlata nella riunione, il che copre l'intento originale della
+    richiesta ("+ traduzione") in modo implicito.
+  - UI: nuovo componente `MeetingRecorder.tsx` (icona persone, timer
+    HH:MM:SS per registrazioni lunghe, messaggi di errore dedicati per
+    durata/dimensione superata), nuova tab "Riunione" nella capture sheet e
+    pulsante dedicato nella CaptureBar, icona `Users` in MemoryCard e nuovo
+    filtro "Riunioni" in TimelineFilters, player audio abilitato anche per
+    il tipo "meeting" nella pagina di dettaglio memoria.
+  - Deploy verificato su Vercel: build "Ready" in produzione per tutti e 5
+    i commit (migrazione, route API, UI di cattura, UI timeline, player).
+  - NON ancora testato dal vivo con una registrazione reale (richiede
+    microfono reale, non verificabile da automazione browser) — da provare
+    dall'utente tramite l'icona "persone" nella barra di cattura.
+  Restano fuori scope, come discusso: (2) integrazione nativa con bot che
+  si unisce alla riunione o cattura audio di sistema/scheda browser — molto
+  più solida (come Otter/Fireflies) ma richiede integrazioni/API separate
+  per ogni piattaforma (developer app, OAuth, infrastruttura bot).
 - Pubblicazione su App Store / Play Store (richiederebbe wrapping della PWA,
   probabilmente via Capacitor, più integrazione StoreKit/Play Billing per
   gli abbonamenti).
@@ -114,6 +136,23 @@ la chat ora risponde con l'elenco corretto degli esercizi, citazioni
 comprese. Questo conferma anche che il caso "foto di un documento →
 ritrovabile in chat" (medico, ristorante, scheda palestra) funziona
 davvero, non solo in teoria.
+
+## [FATTO 2026-08-19] Bug: file caricato non trovato in ricerca
+Segnalato dall'utente: caricato un PDF ("Digital_Voucher_SerialNo-...pdf"),
+visibile in timeline, ma cercando "digital voucher" la ricerca non lo
+trovava. Causa: il titolo/nome file non veniva incluso nel testo indicizzato
+per l'embedding (`processMemory()` in `classification.ts`), solo mostrato in
+UI — quindi le parole prese dal nome del file (naturali da usare in una
+ricerca) non trovavano corrispondenza se non comparivano anche nel testo
+estratto/generato. Foto e note vocali non sono quasi mai affette (raramente
+hanno un titolo). Fix: il titolo ripulito (senza estensione, underscore/
+trattini sostituiti da spazi) viene ora anteposto al testo embeddato.
+Aggiunto anche un endpoint generico `/api/memories/[id]/reprocess` per
+rielaborare retroattivamente memorie esistenti con la pipeline aggiornata
+(riusabile per futuri fix alla pipeline di indicizzazione, non solo questo).
+Pubblicato, deployato e verificato in produzione: il PDF esistente è stato
+rielaborato con l'endpoint di reprocess e la ricerca "digital voucher" ora
+lo trova correttamente.
 
 ## Idee minori 2026-08-18: reminder farmaci, scheda palestra
 - Reminder farmaci: fotografi la confezione/prescrizione, l'app imposta un
