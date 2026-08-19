@@ -37,6 +37,7 @@ const INTEREST_TAG_MAP: Record<string, string> = {
   nightlife: 'node["amenity"~"^(bar|nightclub|pub)$"](around:R,LAT,LON);',
   shopping: 'node["shop"](around:R,LAT,LON);',
   cafes: 'node["amenity"="cafe"](around:R,LAT,LON);',
+  fitness: 'node["leisure"~"^(fitness_centre|sports_centre)$"](around:R,LAT,LON);',
 };
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
