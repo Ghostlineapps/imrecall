@@ -133,6 +133,39 @@ caricato. Il fix sopra risolve comunque il caso una volta che `media_path`
 viene salvato correttamente per l'audio semplice, resta un bug a parte da
 verificare.
 
+[Seguito 2026-08-19] Secondo bug reale segnalato dall'utente sullo stesso
+buono Lidl, stavolta in Scadenze: comparso con "tra 0gg" (scaduto oggi)
+quando in realtà il buono è valido un anno intero a partire da oggi
+(19/08/2026 → 19/08/2027).
+
+Causa: il prompt che estrae `DEADLINE_DETECTED` (uguale, duplicato, in
+`/api/upload/document`, `/api/upload/image`, `/api/upload/meeting`)
+chiedeva al modello solo "trova la data di scadenza", senza distinguere
+tra una data di INIZIO validità ("valido a partire dal 19 agosto 2026") e
+la vera scadenza. Il testo del voucher diceva esplicitamente "valido per
+un anno a partire dal 19 agosto 2026" — il modello ha preso la data di
+inizio come `due_date`, invece di calcolare inizio+1 anno.
+
+Fix: aggiunta a tutti e tre i prompt un'istruzione esplicita — `due_date`
+deve essere la scadenza reale, mai una data di inizio; se il testo dà una
+durata a partire da una data di inizio, il modello deve calcolare lui
+stesso inizio+durata; se non c'è né una scadenza esplicita né una durata
+calcolabile, deve omettere del tutto la riga DEADLINE_DETECTED invece di
+inventare una data. Verificato TypeScript, pubblicato in 3 commit (uno per
+route), build "Ready" su Vercel con badge "Production".
+
+Corretto anche a mano, via l'endpoint PATCH autenticato dell'app (non SQL
+diretto sul DB — stesso percorso che userebbe l'utente, solo automatizzato)
+il record già sbagliato del buono Lidl: `due_date` da 2026-08-19 a
+2027-08-19. Nota: quel record risultava già segnato come completato
+(`completed: true`, timbro poco dopo lo screenshot dell'utente) — lasciato
+com'era, non è stato toccato, da chiarire con l'utente se era intenzionale.
+
+Questo fix vale solo per le NUOVE scadenze rilevate da ora in poi: scadenze
+già estratte in modo simile prima di oggi (se ce ne sono altre con lo
+stesso problema) non vengono corrette automaticamente — richiederebbe un
+controllo caso per caso, non fatto in questo giro.
+
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
 così i consigli nei paraggi (NearbyForYou) suggeriscono palestre quando si
