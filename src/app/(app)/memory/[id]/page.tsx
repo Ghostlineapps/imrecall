@@ -43,7 +43,7 @@ export default function MemoryDetailPage() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={memory.media_url} alt="" className="rounded-xl w-full object-cover" />
         )}
-        {memory.type === "audio" && memory.media_url && (
+        {(memory.type === "audio" || memory.type === "meeting") && memory.media_url && (
           <audio controls src={memory.media_url} className="w-full" />
         )}
         {memory.type === "document" && memory.media_url && (
