@@ -5,9 +5,9 @@ import Link from "next/link";
 import { Clock, MessageCircle, CalendarDays, CalendarClock, Settings, Plus } from "lucide-react";
 import { CaptureSheet } from "@/components/capture/CaptureSheet";
 
-// I 5 pulsanti del cerchio puntano esattamente alle stesse 5 destinazioni
-// della barra in basso (tranne Dashboard stessa): il cerchio è un modo più
-// immediato di raggiungerle dalla home, non un'IA parallela.
+// Uniche 5 destinazioni oltre a Dashboard: la barra in basso è stata
+// ridotta a Dashboard + Istruzioni proprio perché duplicava questo cerchio
+// senza motivo (vedi BottomNav.tsx).
 const ITEMS = [
   { href: "/timeline", label: "Ricordi", icon: Clock },
   { href: "/chat", label: "Chat", icon: MessageCircle },
