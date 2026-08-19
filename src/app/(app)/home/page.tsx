@@ -2,8 +2,15 @@ import { TodayCard } from "@/components/home/TodayCard";
 import { StreakBadge } from "@/components/home/StreakBadge";
 import { NearbyForYou } from "@/components/home/NearbyForYou";
 import { LocationStatusCard } from "@/components/home/LocationStatusCard";
+import { DashboardSearchBar } from "@/components/home/DashboardSearchBar";
+import { DashboardHub } from "@/components/home/DashboardHub";
 import { createClient } from "@/lib/supabase/server";
 
+// Prima si chiamava "Home" e non era chiaro a cosa servisse: ora è la
+// Dashboard, il punto di partenza con accesso diretto (in cerchio) alle
+// altre sezioni, una ricerca in cima, e sotto le stesse card di prima
+// (oggi / nei paraggi / spostamenti) — nessuna funzione persa, solo
+// raggiungibile in modo più diretto.
 export default async function HomePage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -17,28 +24,32 @@ export default async function HomePage() {
   const firstName = profile?.full_name?.split(" ")[0] || "";
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="bg-celeste-bg min-h-full px-5 pt-7 pb-8 space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-white/40 text-sm">Ciao{firstName ? `, ${firstName}` : ""}</p>
-          <h1 className="text-xl font-semibold">La tua memoria oggi</h1>
+          <p className="text-celeste-muted text-sm font-medium">Ciao{firstName ? `, ${firstName}` : ""}</p>
+          <h1 className="text-2xl font-extrabold text-celeste-navy">Dashboard</h1>
         </div>
         <StreakBadge days={profile?.capture_streak_days ?? 0} />
       </div>
 
-      {/* Un'unica card per oggi, non una dashboard con 5 sezioni scariche:
-          meno scelta, più ritorno abituale. Il tipo di card ruota tra
-          on_this_day / proximity / deadline / pre_trip in base a cosa ha
-          priorità più alta oggi (vedi /api/insights/today). */}
-      <TodayCard />
+      <DashboardSearchBar />
 
-      <NearbyForYou />
+      <DashboardHub />
 
-      {/* Punto d'ingresso per gli Spostamenti, non più solo dentro
-          Impostazioni. Niente elenco "ultimi ricordi" qui: quello è il
-          lavoro della tab Ricordi — Home resta sul "adesso", non un
-          duplicato dell'archivio. */}
-      <LocationStatusCard />
+      <div className="space-y-4">
+        {/* Un'unica card per oggi, non una dashboard con 5 sezioni scariche:
+            meno scelta, più ritorno abituale. Il tipo di card ruota tra
+            on_this_day / proximity / deadline / pre_trip in base a cosa ha
+            priorità più alta oggi (vedi /api/insights/today). */}
+        <TodayCard />
+
+        <NearbyForYou />
+
+        {/* Punto d'ingresso per gli Spostamenti, non più dentro
+            Impostazioni: resta l'unico punto d'ingresso da qui. */}
+        <LocationStatusCard />
+      </div>
     </div>
   );
 }
