@@ -4,6 +4,16 @@ import { NextResponse, type NextRequest } from "next/server";
 const PUBLIC_PATHS = ["/login", "/signup", "/callback", "/", "/privacy", "/terms"];
 
 export async function middleware(request: NextRequest) {
+  // Le route API gestiscono da sole l'autenticazione (supabase.auth.getUser()
+  // dentro ogni route handler, con risposta JSON 401 se manca la sessione).
+  // Senza questo bypass, chiamate server-to-server senza cookie di sessione —
+  // come quella di pg_cron verso /api/cron/medications ogni minuto — venivano
+  // reindirizzate silenziosamente alla pagina HTML di /login invece di
+  // arrivare al route handler, e il promemoria farmaco non partiva mai.
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
