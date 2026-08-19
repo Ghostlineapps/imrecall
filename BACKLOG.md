@@ -92,6 +92,47 @@ una sezione in più che spiega il cerchio stesso. Verificato TypeScript,
 pubblicato in 3 commit, build "Ready" su Vercel, e controllato dal vivo in
 produzione: barra a 2 voci e pagina Istruzioni entrambe funzionanti.
 
+[Seguito 2026-08-19] Bug reale segnalato dall'utente (con due screenshot):
+cercato il buono Lidl salvato in precedenza, cliccato "Apri file
+originale" nel dettaglio del ricordo, ottenuto un errore Supabase Storage
+`{"statusCode":"400","error":"InvalidJWT","message":"\"exp\" claim
+timestamp check failed"}` invece del PDF.
+
+Causa: le tre route di upload (`/api/upload/document`, `/api/upload/image`,
+`/api/upload/meeting`) generano un signed URL UNA SOLA VOLTA al momento del
+caricamento, con scadenza fissa di un'ora (`createSignedUrl(path, 60*60)`),
+e lo salvano permanentemente in `memories.media_url`. Qualsiasi ricordo più
+vecchio di un'ora ha quindi un `media_url` ormai scaduto — non solo per i
+documenti ("Apri file originale"), ma per lo stesso motivo anche per
+immagini e audio/riunioni nel dettaglio ricordo, anche se l'utente ha
+segnalato solo il caso del documento.
+
+Fix: `src/app/api/memories/[id]/route.ts` (GET) ora rigenera un signed URL
+fresco ad ogni richiesta, invece di restituire quello salvato al momento
+dell'upload — valido un'altra ora da quando il ricordo viene aperto,
+qualunque sia la sua età. Non serve nessuna migrazione né toccare le route
+di upload: la scrittura di `media_url` al momento dell'upload resta (ormai
+innocua, viene sovrascritta in lettura), l'unica fonte di verità per il
+client è quella rigenerata nella GET.
+
+Verificato TypeScript (mirror + tsc --noEmit, nessun nuovo errore),
+pubblicato in un commit ("Fix expired signed URL for Apri file
+originale"), build "Ready" su Vercel con badge "Production". Controllato
+dal vivo sul ricordo del buono Lidl in produzione: il link generato ora ha
+`exp` un'ora nel futuro rispetto al momento dell'apertura (non più quello
+di un'ora dopo l'upload), e aprendolo il PDF si apre correttamente nel
+visualizzatore del browser — nessun errore InvalidJWT.
+
+Nota per un giro successivo (non richiesto dall'utente, non ancora
+sistemato): la route `/api/upload/audio` non imposta mai `media_url`
+sull'insert per i ricordi di tipo `audio` semplice (a differenza di
+`meeting`, che passa dalla stessa route ma con `media_url` valorizzato) —
+quindi il player audio non compare mai per quel tipo, nemmeno appena
+caricato. Il fix sopra risolve comunque il caso una volta che `media_path`
+è presente, perché la GET ora deriva l'URL da lì; ma se `media_path` non
+viene salvato correttamente per l'audio semplice, resta un bug a parte da
+verificare.
+
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
 così i consigli nei paraggi (NearbyForYou) suggeriscono palestre quando si
