@@ -98,17 +98,20 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ...medication, memory }, { status: 201 });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const { data: medications, error } = await supabase
-    .from("medications")
-    .select("*")
-    .eq("user_id", user.id)
-    .eq("active", true)
-    .order("name", { ascending: true });
+  // Filtro opzionale usato dal dettaglio ricordo, per trovare il farmaco
+  // collegato a una specifica memoria senza scaricare tutta la lista —
+  // vedi MedicationSchedule.tsx.
+  const memoryId = req.nextUrl.searchParams.get("memory_id");
+
+  let query = supabase.from("medications").select("*").eq("user_id", user.id).eq("active", true);
+  query = memoryId ? query.eq("memory_id", memoryId) : query.order("name", { ascending: true });
+
+  const { data: medications, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ medications });
