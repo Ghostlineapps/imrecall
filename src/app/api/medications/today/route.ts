@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { nowInRome } from "@/lib/utils/romeTime";
+import { medicationDueOn } from "@/lib/medications/recurrence";
 
 // Elenco delle dosi di oggi (una per farmaco attivo e orario), con lo stato
 // "presa/da prendere" — alimenta il widget "Farmaci di oggi" in Dashboard.
@@ -11,7 +12,7 @@ export async function GET() {
 
   const { date: today } = nowInRome();
 
-  const { data: medications, error } = await supabase
+  const { data: allMedications, error } = await supabase
     .from("medications")
     .select("*")
     .eq("user_id", user.id)
@@ -19,7 +20,13 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const ids = (medications ?? []).map((m: any) => m.id);
+  // Non tutti i farmaci attivi sono dovuti oggi — vedi migrazione 019
+  // (ricorrenza settimanale/mensile/a intervalli, con range di date
+  // opzionale). Un farmaco "non dovuto oggi" semplicemente non compare
+  // nella lista, invece di apparire ogni giorno con la spunta da dare.
+  const medications = (allMedications ?? []).filter((m: any) => medicationDueOn(m, today));
+
+  const ids = medications.map((m: any) => m.id);
 
   const { data: logs } =
     ids.length > 0
