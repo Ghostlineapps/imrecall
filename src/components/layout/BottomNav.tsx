@@ -11,7 +11,7 @@ import clsx from "clsx";
 // "Scadenze": impegni con data e ora precisa (spesso da screenshot di chat),
 // non documenti con rinnovo periodico.
 const ITEMS = [
-  { href: "/home", label: "Home", icon: Home },
+  { href: "/home", label: "Dashboard", icon: Home },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/timeline", label: "Ricordi", icon: Clock },
   { href: "/appointments", label: "Calendario", icon: CalendarDays },
