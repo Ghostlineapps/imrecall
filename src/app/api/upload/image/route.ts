@@ -94,6 +94,9 @@ export async function POST(req: NextRequest) {
   const latitude = typeof rawLat === "string" ? parseFloat(rawLat) : NaN;
   const longitude = typeof rawLon === "string" ? parseFloat(rawLon) : NaN;
   const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
+  // Vedi migrazione 020 / CaptureSheet healthMode: la sezione Salute manda
+  // esplicitamente "true" quando l'utente carica un referto da lì.
+  const isHealth = formData.get("is_health") === "true";
 
   if (file.size > 10 * 1024 * 1024) {
     return NextResponse.json({ error: "file_too_large", max_mb: 10 }, { status: 413 });
@@ -143,6 +146,7 @@ export async function POST(req: NextRequest) {
       media_url: signedUrl?.signedUrl,
       media_size: buffer.length,
       memory_date: new Date().toISOString(),
+      is_health: isHealth,
     })
     .select()
     .single();
