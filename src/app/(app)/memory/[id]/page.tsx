@@ -8,6 +8,7 @@ import { it } from "date-fns/locale";
 import { RelatedMemories } from "@/components/memory/RelatedMemories";
 import { IntentionActions } from "@/components/memory/IntentionActions";
 import { CircleBackButton } from "@/components/memory/CircleBackButton";
+import { MindMap } from "@/components/memory/MindMap";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -72,6 +73,10 @@ export default function MemoryDetailPage() {
           </div>
         )}
       </div>
+
+      {memory.type === "meeting" && memory.metadata?.mind_map && (
+        <MindMap mermaidSyntax={memory.metadata.mind_map} />
+      )}
 
       {memory.is_intention && (
         <IntentionActions memoryId={memory.id} status={memory.intention_status} onUpdate={mutate} />
