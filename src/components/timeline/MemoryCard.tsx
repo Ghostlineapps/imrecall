@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText, Mic, Users, Image as ImageIcon, Link2, CalendarClock, FileUp } from "lucide-react";
+import { FileText, Mic, Users, Image as ImageIcon, Link2, CalendarClock, FileUp, Pill } from "lucide-react";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 
@@ -11,6 +11,7 @@ const TYPE_ICON = {
   link: Link2,
   deadline: CalendarClock,
   document: FileUp,
+  medication: Pill,
 };
 
 export function MemoryCard({ memory }: { memory: any }) {

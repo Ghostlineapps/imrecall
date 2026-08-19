@@ -9,6 +9,7 @@ const TYPES = [
   { value: "meeting", label: "Riunioni" },
   { value: "image", label: "Foto" },
   { value: "document", label: "File" },
+  { value: "medication", label: "Farmaci" },
   { value: "link", label: "Link" },
 ];
 
