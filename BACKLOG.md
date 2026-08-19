@@ -2,6 +2,147 @@
 
 Aggiornato: 2026-08-19
 
+## [FATTO 2026-08-19] Fix definitivo cancellazione ricordi (RLS) + ricorrenza farmaci flessibile + UX cattura farmaco + sezione Salute
+Tre richieste dell'utente nello stesso giro: (1) i due ricordi di test
+("Bivis" e "Bivis test 2", vedi bug minore segnalato nella voce "Reminder
+farmaci" sopra) risultavano ancora visibili nonostante il tentativo di
+cancellazione — bug reale, non solo residuo di test vecchi; (2) supporto a
+farmaci con cadenza settimanale, a giorni alterni o mensile (casi reali
+citati: insulina settimanale per diabetici, vitamina D mensile per
+anziani); (3) UX di cattura farmaco poco chiara — obbligava a cliccare "+"
+dopo aver impostato l'orario anche per un farmaco preso una sola volta al
+giorno ("basta mettere l'ora e salvare").
+
+**1. Cancellazione ricordi — causa reale trovata**
+
+Il tentativo precedente (migrazione 018, solo `WITH CHECK` sulla policy
+UPDATE) non bastava: riprovando la DELETE sui due ricordi di test, falliva
+ancora con la stessa violazione RLS. Causa reale, isolata con una serie di
+test empirici diretti nell'SQL Editor di Supabase (`begin; set local role
+authenticated; set local request.jwt.claims = '...'; <test>; rollback;`,
+variando una variabile alla volta): quando una tabella ha RLS attivo e una
+policy applicabile a SELECT ha una clausola `USING` che referenzia una
+colonna (qui, `deleted_at is null`), Postgres applica quella STESSA clausola
+anche alla riga RISULTANTE di un UPDATE — in aggiunta a, e
+indipendentemente da, qualsiasi `WITH CHECK` scritto sulla policy UPDATE
+dedicata. Un soft-delete che cambia `deleted_at` da null a non-null viola
+quindi SEMPRE la policy SELECT sulla riga risultante, a prescindere da come
+sia scritto il `WITH CHECK` — a meno di non avere affatto una policy
+SELECT che referenzia quella colonna.
+
+Fix: la policy `memories_own` è stata ripristinata alla sua forma
+originale (`for all using (auth.uid() = user_id and deleted_at is null)
+with check (auth.uid() = user_id)`, invariata dalla migrazione 006/primo
+tentativo) — il problema non era in quella policy. Il fix vero è una
+funzione `SECURITY DEFINER` che bypassa RLS e reimplementa a mano il
+controllo di proprietà:
+```sql
+create or replace function soft_delete_memory(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $body$
+begin
+  update memories set deleted_at = now()
+  where id = p_id and user_id = auth.uid() and deleted_at is null;
+end; $body$;
+grant execute on function soft_delete_memory(uuid) to authenticated;
+```
+`src/app/api/memories/[id]/route.ts` (DELETE) ora chiama
+`supabase.rpc("soft_delete_memory", { p_id: params.id })` invece di un
+UPDATE diretto. Migrazione 018 riscritta per documentare la causa reale
+(non solo il fix). Verificato dal vivo sui due ricordi di test rimasti
+("Bivis", "Bivis test 2"): entrambe le DELETE hanno restituito `200
+{"success":true}` e non compaiono più in Ricordi/Timeline.
+
+**2. Ricorrenza farmaci flessibile**
+
+Migrazione 019, nuove colonne su `medications`:
+- `recurrence_type` (`daily` default/invariato, `weekly`, `interval`,
+  `monthly`).
+- `weekly`: `days_of_week int[]` (0=domenica..6=sabato, convenzione
+  `Date.prototype.getDay()`) — un farmaco "una volta a settimana" è
+  semplicemente un solo giorno spuntato.
+- `interval`: `interval_days` + `interval_anchor_date` — scelto
+  deliberatamente al posto di un selettore di giorni della settimana per
+  rappresentare "giorni alterni", perché un giorno della settimana fisso
+  non esprime una vera alternanza (slitta ogni settimana). `interval_days
+  = 2` a partire da `interval_anchor_date` è la modellazione corretta.
+- `monthly`: `day_of_month` (1-31; se il mese è più corto quel mese non
+  scatta, non slitta al giorno più vicino — scelta per restare
+  prevedibile).
+- `start_date`/`end_date`, ortogonali al tipo di ricorrenza, per farmaci a
+  ciclo limitato (es. un antibiotico preso ogni giorno ma solo per una
+  settimana).
+
+`src/lib/medications/recurrence.ts` (nuovo, condiviso): `medicationDueOn(med,
+dateStr)` centralizza la logica di corrispondenza, usata da entrambi i
+punti che decidono se un farmaco è dovuto in un giorno — `GET
+/api/medications/today` (schermata "farmaci di oggi") e `GET
+/api/cron/medications` (job pg_cron che invia le notifiche push) — così le
+due viste non possono disallinearsi. `POST /api/medications` e `PATCH
+/api/medications/[id]` validano e salvano i nuovi campi (helper
+`parseRecurrence` condiviso via FormData/JSON a seconda della route).
+
+**3. UX cattura farmaco**
+
+`MedicationCapture.tsx` riscritto: il farmaco si salva ora con solo nome +
+orario, senza dover cliccare "+" (che resta disponibile solo per chi
+prende il farmaco più volte al giorno, con nota esplicita in UI). Aggiunto
+un selettore "Ogni quanto" (Tutti i giorni / Giorni specifici / Ogni tot
+giorni / Una volta al mese) con UI condizionale — chip dei giorni della
+settimana, numero di giorni di intervallo, o giorno del mese a seconda
+della scelta — e un toggle opzionale "Solo per un periodo limitato" che
+mostra due campi data.
+
+**4. Sezione Salute**
+
+Non una nuova categorizzazione né una vista di ricerca alternativa (la
+ricerca semantica continua a funzionare su tutti i ricordi come prima) —
+solo un punto d'ingresso visibile per far capire che si possono caricare
+referti (esami del sangue, visite specialistiche...) come foto o file,
+oltre ai farmaci: senza un punto d'ingresso dedicato nessuno penserebbe di
+farlo. Migrazione 020: `memories.is_health boolean default false` +
+indice parziale `(user_id, is_health) where is_health = true`. Impostato a
+`true` esplicitamente in due punti — sempre per i farmaci (`POST
+/api/medications`, ogni farmaco è per natura "salute"), e per foto/
+documenti solo quando caricati dal "+" della sezione Salute
+(`CaptureSheet` in modalità `healthMode`, che passa `isHealth` a
+`ImageCapture`/`DocumentCapture`, che a loro volta aggiungono
+`is_health=true` al FormData verso `/api/upload/image` e
+`/api/upload/document`). Deliberatamente NON derivato da `tags` (che
+viene sovrascritto dalla classificazione asincrona di `processMemory()`) —
+`is_health` è immune a quella pipeline, impostato una volta sola
+all'inserimento.
+
+Nuovo bottone "Salute" nel cerchio della Dashboard (6° destinazione,
+icona `HeartPulse`), nuova pagina `src/app/(app)/health/page.tsx`: lista i
+ricordi con `is_health=true` (`GET /api/memories?is_health=true`,
+raggruppati per giorno, riusa `MemoryCard`) e un "+" limitato a Foto/File/
+Farmaco (`CaptureSheet` con `allowedTabs`, nuovo prop opzionale che
+nasconde le altre tab di cattura senza toccarne il comportamento).
+
+**Verifica**
+
+Migrazioni 019 e 020 applicate in produzione via SQL Editor (stesso
+workflow delle precedenti: `begin;...commit;`, testo verificato con
+screenshot zoomato prima di eseguire, colonne/indice confermati via
+query su `information_schema`/`pg_indexes` dopo l'esecuzione). Verificato
+TypeScript (mirror + `tsc --noEmit --strict`, nessun nuovo errore) su
+tutti i file toccati prima del push. Pubblicato in 12 commit separati
+(workflow di upload via GitHub web, senza CLI git in sandbox), build
+"Ready" su Vercel per tutti, ultimo commit ("Add Salute page") verificato
+in stato "Ready"/Production.
+
+Testato dal vivo in produzione: creato un farmaco di prova ("Test Insulina
+settimanale", ricorrenza settimanale, giorno "Lun") dalla pagina Salute —
+salvato correttamente senza dover toccare il "+" per l'orario, comparso
+nella lista Salute, e verificato via query diretta che
+`recurrence_type='weekly'`, `days_of_week=[1]` e `is_health=true` fossero
+tutti salvati come atteso. Farmaco di prova rimosso dal database dopo la
+verifica. Non testato dal vivo con un caso reale `interval` (giorni
+alterni) o `monthly` — la logica di `medicationDueOn()` copre entrambi i
+casi ma senza un farmaco reale attivo per più giorni non è verificabile
+in un singolo giro; da tenere d'occhio se emergono problemi con farmaci
+reali impostati su quelle ricorrenze.
+
 ## [FATTO 2026-08-19] Redesign: Dashboard a cerchio + pulsante di cattura fluttuante
 Richiesta utente: l'app andava ridisegnata perché poco comprensibile — in
 particolare il tasto "Home" non aveva un senso chiaro, e in Impostazioni
