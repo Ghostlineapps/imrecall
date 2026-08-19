@@ -6,8 +6,9 @@ import clsx from "clsx";
 import { AudioRecorder } from "./AudioRecorder";
 import { ImageCapture } from "./ImageCapture";
 import { LinkCapture } from "./LinkCapture";
+import { DocumentCapture } from "./DocumentCapture";
 
-type Tab = "audio" | "image" | "link";
+type Tab = "audio" | "image" | "link" | "document";
 
 export function CaptureSheet({
   open,
@@ -32,7 +33,7 @@ export function CaptureSheet({
       <div className="relative w-full bg-surface rounded-t-3xl p-5 pb-8 animate-fade-in max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-1 bg-white/5 rounded-full p-1">
-            {(["audio", "image", "link"] as Tab[]).map((t) => (
+            {(["audio", "image", "document", "link"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -41,7 +42,7 @@ export function CaptureSheet({
                   tab === t ? "bg-primary text-white" : "text-white/50"
                 )}
               >
-                {t === "audio" ? "Voce" : t === "image" ? "Foto" : "Link"}
+                {t === "audio" ? "Voce" : t === "image" ? "Foto" : t === "document" ? "File" : "Link"}
               </button>
             ))}
           </div>
@@ -52,6 +53,7 @@ export function CaptureSheet({
 
         {tab === "audio" && <AudioRecorder onSaved={onClose} />}
         {tab === "image" && <ImageCapture onSaved={onClose} />}
+        {tab === "document" && <DocumentCapture onSaved={onClose} />}
         {tab === "link" && <LinkCapture onSaved={onClose} />}
       </div>
     </div>
