@@ -58,6 +58,11 @@ Se l'immagine è un documento con una data di scadenza chiaramente visibile
 passaporto, tessera sanitaria o qualsiasi altro documento con scadenza),
 aggiungi alla fine una riga nel formato:
 DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
+IMPORTANTE: "due_date" deve essere la data in cui la scadenza avviene davvero, MAI la data di inizio
+validità. Se il testo dice "valido/a partire dal X" o "valido per N anni/mesi/giorni a partire dal X",
+X è solo l'inizio: calcola tu la vera scadenza sommando la durata a X (es. "valido per un anno a
+partire dal 19 agosto 2026" → due_date "2027-08-19", non "2026-08-19"). Se manca sia una scadenza
+esplicita sia una durata calcolabile, ometti del tutto la riga DEADLINE_DETECTED.
 
 Se l'immagine è invece uno screenshot di una chat (WhatsApp, Messenger, email
 o simili) o un invito/conferma che propone un appuntamento, incontro, visita
