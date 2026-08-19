@@ -82,12 +82,15 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // Soft delete
-  const { error } = await supabase
-    .from("memories")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", params.id)
-    .eq("user_id", user.id);
+  // Soft delete — passa da una funzione SECURITY DEFINER (soft_delete_memory,
+  // vedi migrazione 018) invece di un UPDATE diretto sulla tabella. Un UPDATE
+  // diretto qui violava sempre la RLS: la policy SELECT che nasconde i
+  // ricordi con deleted_at non null viene applicata da Postgres anche alla
+  // riga risultante dell'UPDATE (oltre alla WITH CHECK della policy UPDATE
+  // stessa), quindi il soft-delete (deleted_at: null -> now()) falliva
+  // sempre con "new row violates row-level security policy", per qualsiasi
+  // utente. La funzione bypassa RLS e ricontrolla la proprietà internamente.
+  const { error } = await supabase.rpc("soft_delete_memory", { p_id: params.id });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
