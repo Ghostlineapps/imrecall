@@ -9,6 +9,7 @@ import { RelatedMemories } from "@/components/memory/RelatedMemories";
 import { IntentionActions } from "@/components/memory/IntentionActions";
 import { CircleBackButton } from "@/components/memory/CircleBackButton";
 import { MindMap } from "@/components/memory/MindMap";
+import { MedicationSchedule } from "@/components/memory/MedicationSchedule";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -40,7 +41,7 @@ export default function MemoryDetailPage() {
 
       <div className="card space-y-3">
         {memory.title && <h1 className="text-lg font-semibold">{memory.title}</h1>}
-        {memory.media_url && memory.type === "image" && (
+        {memory.media_url && (memory.type === "image" || memory.type === "medication") && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={memory.media_url} alt="" className="rounded-xl w-full object-cover" />
         )}
@@ -77,6 +78,8 @@ export default function MemoryDetailPage() {
       {memory.type === "meeting" && memory.metadata?.mind_map && (
         <MindMap mermaidSyntax={memory.metadata.mind_map} />
       )}
+
+      {memory.type === "medication" && <MedicationSchedule memoryId={memory.id} />}
 
       {memory.is_intention && (
         <IntentionActions memoryId={memory.id} status={memory.intention_status} onUpdate={mutate} />
