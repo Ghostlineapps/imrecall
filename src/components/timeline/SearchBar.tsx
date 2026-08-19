@@ -12,11 +12,13 @@ import { Search, X } from "lucide-react";
 export function SearchBar({
   onSearch,
   onClear,
+  initialValue,
 }: {
   onSearch: (query: string) => void;
   onClear: () => void;
+  initialValue?: string;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue ?? "");
 
   function submit(e?: React.FormEvent) {
     e?.preventDefault();
