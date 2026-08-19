@@ -101,6 +101,16 @@ APPOINTMENT_DETECTED: {"title": "...", "appointment_at": "YYYY-MM-DDTHH:MM", "lo
 
 Puoi omettere le righe DEADLINE_DETECTED/APPOINTMENT_DETECTED se non pertinenti.
 
+Se la lingua parlata nella trascrizione qui sotto NON è già l'italiano, aggiungi per
+ultimo anche una traduzione INTEGRALE in italiano di tutta la trascrizione (non un
+riassunto: la traduzione completa, dall'inizio alla fine, dell'intero testo che segue),
+con questa etichetta:
+TRASCRIZIONE_TRADOTTA:
+[qui la traduzione integrale in italiano, senza tagliarla]
+Se la trascrizione qui sotto è già in italiano, ometti del tutto questa sezione (non
+ripetere il testo, sarebbe ridondante — l'utente vedrà comunque la trascrizione
+originale).
+
 TRASCRIZIONE:
 ${excerpt}`;
 }
@@ -223,6 +233,11 @@ export async function POST(req: NextRequest) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: buildMeetingPrompt(excerpt, durationMinutes) }],
+      // Di default la risposta potrebbe essere tagliata: oltre ai campi
+      // strutturati ora chiediamo anche l'eventuale traduzione integrale
+      // della trascrizione (fino a 20.000 caratteri, vedi TRASCRIZIONE_TRADOTTA
+      // nel prompt), che da sola può valere qualche migliaio di token.
+      max_tokens: 16000,
     });
 
     const rawText = completion.choices[0].message.content ?? "";
@@ -238,12 +253,16 @@ export async function POST(req: NextRequest) {
       /TEMI:\s*([\s\S]*?)(?=\nMAPPA:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
     );
     const mapMatch = rawText.match(
-      /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
+      /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
     );
+    // Presente solo se la riunione non era già in italiano (vedi prompt) —
+    // sempre l'ultima sezione della risposta, cattura tutto fino alla fine.
+    const translatedMatch = rawText.match(/TRASCRIZIONE_TRADOTTA:\s*([\s\S]*)$/);
 
     if (titleMatch?.[1]?.trim()) title = titleMatch[1].trim();
     const summary = summaryMatch?.[1]?.trim() ?? "";
     const topics = topicsMatch?.[1]?.trim() ?? "";
+    const translatedTranscript = translatedMatch?.[1]?.trim() ?? "";
 
     mindMapMermaid = buildMindMapMermaid(mapMatch?.[1] ?? "", title);
 
@@ -251,9 +270,15 @@ export async function POST(req: NextRequest) {
     const truncatedNote =
       fullTranscript.trim().length > MAX_STORED_CHARS ? "\n\n[trascrizione troncata]" : "";
 
-    content = [summary, topics, `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`]
-      .filter(Boolean)
-      .join("\n\n");
+    // Se la riunione non era in italiano, teniamo sia la traduzione (più
+    // comoda da leggere e utile per la ricerca semantica in italiano) sia
+    // il testo originale (per controllare termini esatti, nomi, cifre) —
+    // scelta dell'utente rispetto a "sostituisci l'originale" o "non tradurre".
+    const transcriptSection = translatedTranscript
+      ? `Trascrizione (tradotta in italiano):\n${translatedTranscript}${truncatedNote}\n\nTrascrizione originale:\n${truncatedTranscript}${truncatedNote}`
+      : `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`;
+
+    content = [summary, topics, transcriptSection].filter(Boolean).join("\n\n");
   }
 
   const { data: memory, error } = await supabase
