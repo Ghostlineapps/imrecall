@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
-import { OpenAIStream, StreamingTextResponse } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embeddings";
 
@@ -56,11 +55,16 @@ export async function POST(req: NextRequest) {
     content: query,
   });
 
-  // Embed della query + ricerca semantica sulle memorie
+  // Embed della query + ricerca semantica sulle memorie. Soglia abbassata
+  // da 0.65 a 0.5: un test reale (query "scheda palestra di agosto" contro
+  // una foto descritta come "lista di esercizi fisici per il mese di
+  // agosto 2026") non superava 0.65 pur essendo chiaramente la memoria
+  // giusta — 0.65 era troppo severo per query formulate diversamente dal
+  // contenuto originale.
   const queryEmbedding = await generateEmbedding(query);
   const { data: matches } = await supabase.rpc("match_memories", {
     query_embedding: queryEmbedding,
-    match_threshold: 0.65,
+    match_threshold: 0.5,
     match_count: 5,
     p_user_id: user.id,
   });
@@ -89,7 +93,7 @@ ${contextBlock}`
 memoria rilevante per questa domanda. Dillo onestamente all'utente, senza inventare
 nulla, in italiano.`;
 
-  const response = await openai.chat.completions.create({
+  const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     stream: true,
     messages: [
@@ -99,21 +103,41 @@ nulla, in italiano.`;
     ],
   });
 
+  // Streaming di puro testo, scritto a mano invece di affidarsi a
+  // OpenAIStream/StreamingTextResponse del pacchetto "ai": quel wrapper, a
+  // seconda della versione installata, può serializzare col "data stream
+  // protocol" (righe tipo 0:"token") invece del testo semplice che il
+  // client si aspetta — è esattamente il bug riscontrato in test (la chat
+  // mostrava all'utente 0:"Non" 0:" ho" ... invece della risposta). Qui
+  // scriviamo solo i token grezzi nello stream, cosi' il client (che fa
+  // decoder.decode(value) e concatena) riceve esattamente testo leggibile,
+  // senza dipendere dal formato interno di una libreria terza.
   let fullResponse = "";
-  const stream = OpenAIStream(response as any, {
-    onToken: (token) => {
-      fullResponse += token;
-    },
-    onFinal: async () => {
-      await supabase.from("chat_messages").insert({
-        session_id: sessionId,
-        user_id: user.id,
-        role: "assistant",
-        content: fullResponse,
-        cited_memory_ids: (matches ?? []).map((m: any) => m.id),
-      });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const chunk of completion) {
+          const token = chunk.choices[0]?.delta?.content ?? "";
+          if (token) {
+            fullResponse += token;
+            controller.enqueue(encoder.encode(token));
+          }
+        }
+      } finally {
+        await supabase.from("chat_messages").insert({
+          session_id: sessionId,
+          user_id: user.id,
+          role: "assistant",
+          content: fullResponse,
+          cited_memory_ids: (matches ?? []).map((m: any) => m.id),
+        });
+        controller.close();
+      }
     },
   });
 
-  return new StreamingTextResponse(stream, { headers: { "X-Session-Id": sessionId } });
+  return new Response(stream, {
+    headers: { "X-Session-Id": sessionId, "Content-Type": "text/plain; charset=utf-8" },
+  });
 }
