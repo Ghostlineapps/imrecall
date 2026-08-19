@@ -12,7 +12,16 @@ const ACCEPTED =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel," +
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
-export function DocumentCapture({ onSaved }: { onSaved: () => void }) {
+export function DocumentCapture({
+  onSaved,
+  isHealth = false,
+}: {
+  onSaved: () => void;
+  // true quando il file viene caricato dalla sezione Salute — marca la
+  // memoria come is_health così compare nella lista referti/esami (vedi
+  // migrazione 020), senza alcun effetto su categorie o ricerca generica.
+  isHealth?: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -28,6 +37,7 @@ export function DocumentCapture({ onSaved }: { onSaved: () => void }) {
     try {
       const formData = new FormData();
       formData.append("file", file, file.name);
+      if (isHealth) formData.append("is_health", "true");
 
       const res = await fetch("/api/upload/document", { method: "POST", body: formData });
       if (!res.ok) throw new Error("upload_failed");

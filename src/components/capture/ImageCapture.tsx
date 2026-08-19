@@ -33,7 +33,16 @@ async function extractPhotoCoords(file: File): Promise<{ latitude: number; longi
   }
 }
 
-export function ImageCapture({ onSaved }: { onSaved: () => void }) {
+export function ImageCapture({
+  onSaved,
+  isHealth = false,
+}: {
+  onSaved: () => void;
+  // true quando la foto viene caricata dalla sezione Salute — marca la
+  // memoria come is_health così compare nella lista referti/esami (vedi
+  // migrazione 020), senza alcun effetto su categorie o ricerca generica.
+  isHealth?: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -68,6 +77,7 @@ export function ImageCapture({ onSaved }: { onSaved: () => void }) {
         formData.append("latitude", String(coords.latitude));
         formData.append("longitude", String(coords.longitude));
       }
+      if (isHealth) formData.append("is_health", "true");
 
       const res = await fetch("/api/upload/image", { method: "POST", body: formData });
       if (!res.ok) throw new Error("upload_failed");
