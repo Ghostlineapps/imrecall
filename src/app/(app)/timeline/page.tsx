@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { MemoryCard } from "@/components/timeline/MemoryCard";
@@ -10,9 +11,14 @@ import { SearchBar } from "@/components/timeline/SearchBar";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const PAGE_SIZE = 20;
 
-export default function TimelinePage() {
+function TimelineContent() {
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get("q") ?? undefined;
+
   const [filters, setFilters] = useState<{ type?: string; category?: string }>({});
-  const [searchQuery, setSearchQuery] = useState<string | null>(null);
+  // Se si arriva qui dalla barra di ricerca in Dashboard con ?q=..., la
+  // ricerca parte già valorizzata invece di mostrare la timeline vuota.
+  const [searchQuery, setSearchQuery] = useState<string | null>(initialQuery ?? null);
 
   const getKey = (pageIndex: number, prevData: any) => {
     if (prevData && prevData.memories.length === 0) return null;
@@ -53,7 +59,7 @@ export default function TimelinePage() {
     <div className="px-4 pt-6 space-y-5">
       <h1 className="text-xl font-semibold">Ricordi</h1>
 
-      <SearchBar onSearch={setSearchQuery} onClear={() => setSearchQuery(null)} />
+      <SearchBar onSearch={setSearchQuery} onClear={() => setSearchQuery(null)} initialValue={initialQuery} />
 
       {searchQuery ? (
         <div className="space-y-3">
@@ -110,5 +116,13 @@ export default function TimelinePage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function TimelinePage() {
+  return (
+    <Suspense fallback={null}>
+      <TimelineContent />
+    </Suspense>
   );
 }
