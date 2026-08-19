@@ -25,7 +25,16 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     setError(null);
     setDetectedMessage(null);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+    // Bitrate basso ma esplicito (senza specificarlo, il default del
+    // browser per l'audio può arrivare a ~128kbps, che per una riunione di
+    // 60-90 minuti supererebbe facilmente il limite di 25MB di Whisper). A
+    // 32kbps mono l'opus resta ampiamente intelligibile per il parlato e
+    // un'ora di registrazione pesa ~14MB, ben sotto la soglia (vedi
+    // MAX_FILE_BYTES in /api/upload/meeting).
+    const recorder = new MediaRecorder(stream, {
+      mimeType: "audio/webm;codecs=opus",
+      audioBitsPerSecond: 32000,
+    });
     chunksRef.current = [];
 
     recorder.ondataavailable = (e) => {
