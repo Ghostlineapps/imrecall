@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { MemoryCard } from "@/components/timeline/MemoryCard";
 import { TimelineFilters } from "@/components/timeline/TimelineFilters";
+import { SearchBar } from "@/components/timeline/SearchBar";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const PAGE_SIZE = 20;
 
 export default function TimelinePage() {
   const [filters, setFilters] = useState<{ type?: string; category?: string }>({});
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
 
   const getKey = (pageIndex: number, prevData: any) => {
     if (prevData && prevData.memories.length === 0) return null;
@@ -24,6 +27,15 @@ export default function TimelinePage() {
 
   const { data, size, setSize, isLoading } = useSWRInfinite(getKey, fetcher);
   const memories = data?.flatMap((page) => page.memories) ?? [];
+
+  // Ricerca vera: attiva solo quando l'utente digita una query. Riusa lo
+  // stesso match_memories() della chat, ma restituisce le memorie grezze
+  // (cliccabili) invece di una risposta testuale sintetizzata.
+  const { data: searchData, isLoading: isSearching } = useSWR(
+    searchQuery ? `/api/search?q=${encodeURIComponent(searchQuery)}` : null,
+    fetcher
+  );
+  const searchResults = searchData?.memories ?? [];
 
   // Raggruppa per giorno
   const grouped = memories.reduce((acc: Record<string, any[]>, m: any) => {
@@ -41,29 +53,61 @@ export default function TimelinePage() {
     <div className="px-4 pt-6 space-y-5">
       <h1 className="text-xl font-semibold">Ricordi</h1>
 
-      <TimelineFilters filters={filters} onChange={setFilters} />
+      <SearchBar onSearch={setSearchQuery} onClear={() => setSearchQuery(null)} />
 
-      {isLoading && memories.length === 0 && (
-        <div className="space-y-2">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="card h-16 animate-pulse bg-white/5" />
-          ))}
+      {searchQuery ? (
+        <div className="space-y-3">
+          <p className="text-xs text-white/40 uppercase tracking-wide">
+            Risultati per &quot;{searchQuery}&quot;
+          </p>
+
+          {isSearching && (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="card h-16 animate-pulse bg-white/5" />
+              ))}
+            </div>
+          )}
+
+          {!isSearching && searchResults.length === 0 && (
+            <p className="text-sm text-white/40 py-4 text-center">
+              Nessun ricordo trovato per questa ricerca.
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {searchResults.map((m: any) => (
+              <MemoryCard key={m.id} memory={m} />
+            ))}
+          </div>
         </div>
-      )}
+      ) : (
+        <>
+          <TimelineFilters filters={filters} onChange={setFilters} />
 
-      {Object.entries(grouped).map(([day, items]) => (
-        <div key={day} className="space-y-2">
-          <p className="text-xs text-white/40 uppercase tracking-wide">{day}</p>
-          {items.map((m) => (
-            <MemoryCard key={m.id} memory={m} />
+          {isLoading && memories.length === 0 && (
+            <div className="space-y-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="card h-16 animate-pulse bg-white/5" />
+              ))}
+            </div>
+          )}
+
+          {Object.entries(grouped).map(([day, items]) => (
+            <div key={day} className="space-y-2">
+              <p className="text-xs text-white/40 uppercase tracking-wide">{day}</p>
+              {items.map((m) => (
+                <MemoryCard key={m.id} memory={m} />
+              ))}
+            </div>
           ))}
-        </div>
-      ))}
 
-      {memories.length > 0 && memories.length % PAGE_SIZE === 0 && (
-        <button onClick={() => setSize(size + 1)} className="btn-ghost w-full text-center py-3 text-sm">
-          Carica altri
-        </button>
+          {memories.length > 0 && memories.length % PAGE_SIZE === 0 && (
+            <button onClick={() => setSize(size + 1)} className="btn-ghost w-full text-center py-3 text-sm">
+              Carica altri
+            </button>
+          )}
+        </>
       )}
     </div>
   );
