@@ -22,6 +22,7 @@ export const INTEREST_OPTIONS = [
   { value: "nightlife", label: "Vita notturna" },
   { value: "shopping", label: "Shopping" },
   { value: "cafes", label: "Caffè & pasticcerie" },
+  { value: "fitness", label: "Fitness & palestre" },
 ] as const;
 
 export type DietaryPreference = (typeof DIETARY_OPTIONS)[number]["value"];
