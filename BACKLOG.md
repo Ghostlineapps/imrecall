@@ -73,9 +73,24 @@ in basso) prima di scrivere codice vero. Solo dopo l'ok esplicito
 
 Resta fuori scope per ora: estendere la palette celeste al resto delle
 schermate (Chat/Ricordi/Calendario/Scadenze/dettaglio memoria restano sul
-tema scuro attuale), e decidere se semplificare/rimuovere la barra di
-navigazione in basso ora che il cerchio la duplica in parte — entrambe
-questioni aperte da riprendere quando l'utente vuole procedere oltre.
+tema scuro attuale) — questione aperta da riprendere quando l'utente vuole
+procedere oltre.
+
+[Seguito 2026-08-19] La barra di navigazione in basso è stata affrontata
+subito dopo, su domanda diretta dell'utente ("che senso ha mantenere la
+barra di navigazione se abbiamo tutto nei tasti in cerchio?"): ridotta da 6
+a 2 voci — Dashboard e Istruzioni — in `BottomNav.tsx`. Chat/Ricordi/
+Calendario/Scadenze/Impostazioni restavano ridondanti col cerchio (già
+raggiungibili da lì), ma un modo per tornare alla Dashboard da qualunque
+altra schermata serviva comunque, visto che il cerchio vive solo lì.
+Su proposta dell'utente, "Istruzioni" è diventata anche l'occasione per
+una guida in-app: nuova pagina `src/app/(app)/guide/page.tsx`, contenuto
+statico (nessun dato utente, nessuna migrazione), che riusa la guida
+passo-passo già scritta per il post Instagram — stesso testo, adattato ai
+nomi attuali dei pulsanti (Ricordi/Chat/Calendario/Scadenze/Profilo) e con
+una sezione in più che spiega il cerchio stesso. Verificato TypeScript,
+pubblicato in 3 commit, build "Ready" su Vercel, e controllato dal vivo in
+produzione: barra a 2 voci e pagina Istruzioni entrambe funzionanti.
 
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
