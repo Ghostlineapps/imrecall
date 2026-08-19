@@ -62,7 +62,21 @@ export async function processMemory(memoryId: string, attempt = 1) {
 
     if (!memory) return;
 
-    const textToProcess = memory.content || memory.raw_content || memory.link_description || "";
+    // Il titolo (es. il nome del file per un documento caricato: "Digital_
+    // Voucher_SerialNo-...pdf") va incluso nel testo indicizzato, non solo
+    // mostrato in UI — altrimenti una ricerca con parole prese dal nome del
+    // file ("digital voucher") non trova nulla se quelle parole non
+    // compaiono anche nel testo estratto/generato. Per foto e voce il
+    // titolo è quasi sempre vuoto, quindi qui non cambia nulla. Ripuliamo il
+    // nome file solo per l'embedding (non per il titolo mostrato in UI):
+    // "Digital_Voucher_SerialNo-123.pdf" → "Digital Voucher SerialNo 123" —
+    // parole separate si allineano meglio a una query in linguaggio naturale.
+    const baseText = memory.content || memory.raw_content || memory.link_description || "";
+    const titleForEmbedding = memory.title
+      ?.replace(/\.[a-zA-Z0-9]{2,5}$/, "")
+      .replace(/[_-]+/g, " ")
+      .trim();
+    const textToProcess = titleForEmbedding ? `${titleForEmbedding}\n\n${baseText}`.trim() : baseText;
     if (!textToProcess) {
       await supabase.from("memories").update({ status: "ready" }).eq("id", memoryId);
       return;
