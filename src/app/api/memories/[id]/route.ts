@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Bucket Storage per tipo di memoria — serve per rigenerare un signed URL
+// fresco ad ogni apertura del dettaglio (vedi sotto).
+const BUCKET_BY_TYPE: Record<string, string> = {
+  image: "images",
+  audio: "audio",
+  meeting: "audio",
+  document: "documents",
+};
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -15,6 +24,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   if (error || !memory) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Il media_url salvato in DB al momento dell'upload è un signed URL con
+  // scadenza di 1 ora (vedi le route /api/upload/*) — riaprendo il
+  // ricordo più tardi quel link è scaduto ("InvalidJWT: exp claim
+  // timestamp check failed"). Qui ne generiamo uno fresco ad ogni
+  // richiesta, valido un'altra ora, invece di riusare quello salvato.
+  let mediaUrl = memory.media_url;
+  const bucket = BUCKET_BY_TYPE[memory.type];
+  if (memory.media_path && bucket) {
+    const { data: signed } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(memory.media_path, 60 * 60);
+    if (signed?.signedUrl) mediaUrl = signed.signedUrl;
+  }
+
   // Memorie correlate per similarità embedding
   let related: any[] = [];
   if (memory.embedding) {
@@ -27,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     related = (data ?? []).filter((m: any) => m.id !== memory.id);
   }
 
-  return NextResponse.json({ ...memory, related });
+  return NextResponse.json({ ...memory, media_url: mediaUrl, related });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
