@@ -6,6 +6,7 @@ const TYPES = [
   { value: undefined, label: "Tutti" },
   { value: "text", label: "Testo" },
   { value: "audio", label: "Voce" },
+  { value: "meeting", label: "Riunioni" },
   { value: "image", label: "Foto" },
   { value: "document", label: "File" },
   { value: "link", label: "Link" },

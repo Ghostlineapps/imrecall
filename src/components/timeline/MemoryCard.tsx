@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { FileText, Mic, Image as ImageIcon, Link2, CalendarClock, FileUp } from "lucide-react";
+import { FileText, Mic, Users, Image as ImageIcon, Link2, CalendarClock, FileUp } from "lucide-react";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 
 const TYPE_ICON = {
   text: FileText,
   audio: Mic,
+  meeting: Users,
   image: ImageIcon,
   link: Link2,
   deadline: CalendarClock,
