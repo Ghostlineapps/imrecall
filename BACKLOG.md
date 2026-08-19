@@ -2,6 +2,81 @@
 
 Aggiornato: 2026-08-19
 
+## [FATTO 2026-08-19] Redesign: Dashboard a cerchio + pulsante di cattura fluttuante
+Richiesta utente: l'app andava ridisegnata perché poco comprensibile — in
+particolare il tasto "Home" non aveva un senso chiaro, e in Impostazioni
+c'era roba non pertinente (Spostamenti). Prima di ridisegnare è stata fatta
+una mappatura di sola lettura di BottomNav/Home/Impostazioni per non agire
+su un ricordo impreciso dell'utente: la cosa fuori posto era davvero
+"Spostamenti" (una funzione, non una preferenza), non gli
+appuntamenti/scadenze come inizialmente sospettato dall'utente (quelli
+hanno già tab dedicate).
+
+Iterato prima come mockup statico (immagini, nessun codice reale) per
+validare l'idea con l'utente — cerchio con le 5 destinazioni principali +
+barra di ricerca sopra, proposta dall'utente stessa ("mettessimo in cerchio
+tutti i vari tasti [...] la chiamiamo dashboard e sopra ci mettiamo la
+barra di ricerca?") — poi il posizionamento del pulsante fluttuante di
+cattura è stato affinato più volte sul mockup (centrato meglio, non troppo
+in basso) prima di scrivere codice vero. Solo dopo l'ok esplicito
+("ok andiamo") è stata fatta l'implementazione reale:
+
+- `tailwind.config.ts`: aggiunta palette `celeste` (bg/accent/accentDark/
+  navy/muted) come token AGGIUNTIVI, senza toccare la palette scura
+  esistente — per ora solo Dashboard e pulsante di cattura usano il nuovo
+  stile chiaro, il resto dell'app resta sul tema scuro attuale. Estensione
+  del redesign a tutte le altre schermate è un passo successivo, non fatto
+  in questo giro.
+- `src/app/(app)/home/page.tsx`: da "Home" (una card "oggi" + poco altro) a
+  "Dashboard" — saluto, titolo, barra di ricerca, cerchio di 5 pulsanti
+  (`DashboardHub.tsx`) attorno a un pulsante centrale "+", poi sotto le
+  stesse card di prima (oggi/nei paraggi/spostamenti — nessuna funzione
+  rimossa, solo raggiungibile in modo più diretto).
+- `src/components/home/DashboardHub.tsx` (nuovo): i 5 pulsanti del cerchio
+  puntano esattamente alle stesse destinazioni della barra in basso
+  (Ricordi/Chat/Calendario/Scadenze/Profilo→Impostazioni) — il cerchio è un
+  accesso più immediato, non una IA parallela. La barra di navigazione in
+  basso resta invariata (solo l'etichetta "Home"→"Dashboard" in
+  `BottomNav.tsx`) per non rompere nulla, da valutare in futuro se
+  semplificarla ora che esiste il cerchio.
+- `src/components/home/DashboardSearchBar.tsx` (nuovo): cerca direttamente
+  dalla Dashboard passando la query a `/timeline?q=...` — riusa il motore
+  di ricerca semantica già esistente in Ricordi invece di duplicarlo.
+  `SearchBar.tsx` e `timeline/page.tsx` estesi per accettare/precompilare
+  la query da URL (con `useSearchParams` avvolto in `<Suspense>`, richiesto
+  da Next.js per l'export statico, stesso pattern già usato in
+  `(auth)/login/page.tsx`).
+- Pulsante di cattura: la vecchia `CaptureBar.tsx` (barra full-width sempre
+  agganciata in fondo, su ogni schermata) sostituita da `CaptureFab.tsx`, un
+  pulsante **+** fluttuante sempre visibile (in `(app)/layout.tsx`), più
+  discreto ma con lo stesso accesso immediato a tutte le modalità di
+  cattura. Aggiunta anche una tab "Testo" alla capture sheet
+  (`TextCapture.tsx`) che prima esisteva solo come input inline nella
+  vecchia barra — nessuna funzione persa nel passaggio. `CaptureBar.tsx`
+  non più usata da nessuna pagina, lasciata nel repo ma orfana (da rimuovere
+  in un secondo momento se non serve più).
+- `src/app/(app)/settings/page.tsx`: rimosso il link "Spostamenti" (restava
+  duplicato — l'unico punto d'ingresso ora è la card in Dashboard, come già
+  deciso in una sessione precedente). Impostazioni ora contiene solo vere
+  impostazioni: piano, profilo/preferenze, notifiche, logout.
+- Verificato TypeScript (mirror + tsc --noEmit) prima del push. Pubblicato
+  in 9 commit separati (un commit per cartella, workflow di upload via
+  GitHub web essendo senza CLI git in sandbox); un commit intermedio
+  (`Add Dashboard ring hub...`) ha temporaneamente rotto la build su Vercel
+  perché referenziava la tab "Testo" prima che venisse aggiunta al commit
+  successivo — la build è tornata "Ready" con il commit successivo
+  (`Add text capture tab...`) e tutti i commit successivi, quindi la
+  produzione non è mai rimasta rotta più di ~2 minuti. Verificato dal vivo
+  sull'app in produzione (loggato come Francesco): Dashboard, ricerca,
+  pulsante fluttuante e sheet di cattura, e pagina Impostazioni decluttered
+  — tutto funzionante.
+
+Resta fuori scope per ora: estendere la palette celeste al resto delle
+schermate (Chat/Ricordi/Calendario/Scadenze/dettaglio memoria restano sul
+tema scuro attuale), e decidere se semplificare/rimuovere la barra di
+navigazione in basso ora che il cerchio la duplica in parte — entrambe
+questioni aperte da riprendere quando l'utente vuole procedere oltre.
+
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
 così i consigli nei paraggi (NearbyForYou) suggeriscono palestre quando si
@@ -218,6 +293,12 @@ multilingua in futuro. Deciso di rimandare finché il prodotto core non è
   Partner Limited. Nota utente: lo sfondo nero attuale non piace, preferenza
   per un azzurro "che rilassa" come base della nuova palette. Priorità
   esplicita: prima prodotto stabile/senza bug, poi estetica — non prima.
+  - [FATTO parzialmente, 2026-08-19] Vedi voce dedicata in cima al file:
+    Dashboard ridisegnata (cerchio + ricerca) e pulsante di cattura
+    fluttuante, con la nuova palette celeste, in produzione. Il resto delle
+    schermate (Chat/Ricordi/Calendario/Scadenze/dettaglio memoria) resta
+    ancora sul tema scuro originale — estensione della palette a tutta
+    l'app non ancora fatta, da riprendere quando l'utente vuole procedere.
 - Landing page su ImRecall.app (in discussione: sezione Founder, waitlist).
   Nota: imrecall.app non è ancora collegato a nessun deploy, oggi punta a
   nulla — link funzionante attuale resta imrecall.vercel.app.
