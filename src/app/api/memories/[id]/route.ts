@@ -8,6 +8,7 @@ const BUCKET_BY_TYPE: Record<string, string> = {
   audio: "audio",
   meeting: "audio",
   document: "documents",
+  medication: "images", // foto opzionale della confezione, caricata su "images" — vedi /api/medications
 };
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
