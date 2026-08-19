@@ -166,6 +166,113 @@ già estratte in modo simile prima di oggi (se ce ne sono altre con lo
 stesso problema) non vengono corrette automaticamente — richiederebbe un
 controllo caso per caso, non fatto in questo giro.
 
+[Seguito 2026-08-19] L'utente ha segnalato che il buono Lidl era sparito
+dall'elenco delle Scadenze attive ("si rimettilo comr da fare"): confermato
+che il flag `completed: true` notato sopra non era intenzionale, e
+ripristinato a `completed: false` con lo stesso endpoint PATCH autenticato.
+Verificato dal vivo: "Buono spesa Lidl · 19 agosto 2027 · tra 364gg" di
+nuovo visibile in Scadenze.
+
+## [FATTO 2026-08-19] Reminder farmaci
+Proposta dell'utente ("creare un tasto 'Salute' dove si possono conservare
+i vari esami del sangue, visite specialistiche, e in quella sezione anche
+il reminder per i farmaci") valutata così: esami del sangue/visite
+specialistiche sono già coperti dalla cattura generica esistente (foto o
+testo, ritrovabili in chat via ricerca semantica, stesso principio della
+scheda palestra sopra) — nessun lavoro nuovo necessario lì. Il reminder
+farmaci invece è genuinamente nuovo: serve un'ora precisa + una notifica
+push che nomini il farmaco esatto, per non rischiare scambi di dose nei
+pazienti anziani ("una notifica push dovrebbe dire: Prendi il Bivis. così
+non si rischia di sbagliare farmaco"). Decisione dell'utente su dove
+metterlo: "ci sta che mettiamo tutto su 'Ricordi', mantiene l'equilibrio
+dell'app" — niente nuova voce di navigazione, il farmaco è un tipo di
+ricordo in più (`medication`) accanto agli altri, stesso principio già
+seguito per i documenti.
+
+Vincolo tecnico: i Cron Job di Vercel sul piano Hobby girano al massimo una
+volta al giorno con un margine di ±59 minuti (vedi
+https://vercel.com/docs/cron-jobs/usage-and-pricing) — troppo impreciso
+per un promemoria a un orario esatto, più volte al giorno. Alternative
+valutate: upgrade a Vercel Pro (20$/mese) per cron precisi, oppure
+`pg_cron`/`pg_net` di Supabase (gratuiti anche sul piano free, granularità
+al minuto, dentro il database stesso). Scelta dell'utente, esplicita per
+motivi economici: "se usi pg_cron, risparmio danaro che in questo momento
+è mooooolto scarso" — pg_cron, non Vercel Pro.
+
+Dose/quantità: su indicazione dell'utente, NON estratta dall'AI — è testo
+libero scritto o dettato dall'utente stesso dalla prescrizione del medico
+("15 gocce", "due compresse", "una supposta", "una siringa"), stesso
+principio del nome del farmaco. Niente chiamata a GPT nel percorso di
+salvataggio farmaco, a differenza di foto/documenti/riunioni.
+
+Schema (migrazioni 016-017):
+- `memory_type` esteso con il valore `medication`.
+- `medications`: farmaco (nome, dose testo libero, array di orari `HH:MM`
+  fuso Europe/Rome, `active`), collegato a `memories.id` (`on delete set
+  null` — cancellare il ricordo non cancella il farmaco, per errore
+  scoperto più sotto).
+- `medication_logs`: una riga per farmaco+giorno+orario dovuto, con
+  `taken_at` (quando l'utente conferma la dose) e `notified_at` (quando è
+  partita la notifica, per non reinviarla due volte nello stesso minuto).
+
+API: `POST/GET /api/medications` (creazione + lista), `PATCH/DELETE
+/api/medications/[id]`, `POST /api/medications/[id]/take` (segna presa/non
+presa, usato sia da Dashboard che dal dettaglio memoria), `GET
+/api/medications/today` (stato del giorno, fonte dati condivisa — stessa
+chiave cache SWR — tra i due punti in cui compare), `GET
+/api/cron/medications` (chiamato da pg_cron ogni minuto: cerca farmaci il
+cui orario coincide col minuto corrente in fuso Europe/Rome via
+`nowInRome()`, invia la push col nome del farmaco nel titolo — "Prendi il
+Bivis" — e il deep-link al ricordo, con dedup su `notified_at`).
+
+UI: nuova tab "Farmaco" nella capture sheet (foto opzionale + nome + dose +
+chip orari), card "Farmaci di oggi" in Dashboard, stessa vista nel
+dettaglio del ricordo-farmaco (così chi tocca la notifica push può
+confermare subito la dose senza dover tornare in Dashboard), icona e
+filtro dedicati in Ricordi/Timeline.
+
+Infrastruttura: `MEDICATION_CRON_SECRET` generato e salvato nelle
+Environment Variables di Vercel; estensioni `pg_cron` e `pg_net` abilitate
+sul progetto Supabase; job schedulato con
+`cron.schedule('medication-reminders', '* * * * *', $$select
+net.http_get(url := '.../api/cron/medications', headers :=
+jsonb_build_object('Authorization', 'Bearer <secret>'))$$)`. Il comando SQL
+con il secret incorporato non è stato eseguito dall'assistente (inserire
+credenziali/token in un campo è un'azione non consentita) — eseguito
+dall'utente stesso su indicazione, nell'SQL Editor di Supabase.
+
+Bug scoperto e corretto in fase di verifica end-to-end: il middleware di
+autenticazione (`src/middleware.ts`) intercettava TUTTE le richieste,
+incluse quelle verso `/api/*`, e reindirizzava alla pagina HTML di
+`/login` qualsiasi chiamata priva di cookie di sessione — comportamento
+invisibile per le chiamate normali dell'app (fatte dal browser, sempre con
+cookie), ma fatale per una chiamata server-to-server come quella di
+pg_cron: il job risultava "succeeded" (nessun errore SQL) ma la richiesta
+non arrivava mai al route handler, quindi nessun farmaco veniva controllato
+e nessuna notifica partiva mai, in silenzio. Diagnosticato confrontando il
+titolo HTML restituito (quello della landing page, non un JSON) e poi
+confermato nei log Vercel (307 su ogni chiamata prima del fix, 200 dopo).
+Fix: le route `/api/*` ora saltano il middleware — gestiscono già da sole
+l'autenticazione con risposta JSON 401, come previsto in origine.
+
+Verificato dal vivo: creato un farmaco di prova ("Bivis test 2", dose "15
+gocce") con orario a 2 minuti da allora; alle 23:09 il job pg_cron ha
+chiamato l'endpoint (status 200, confermato nei log Vercel), la riga in
+`medication_logs` ha ricevuto `notified_at`, e la spunta "presa" ha
+funzionato sia dal widget in Dashboard sia dal dettaglio del ricordo
+(stessa cache, sincronizzati). Farmaci di prova rimossi dal database dopo
+la verifica (record `medications` cancellati via l'endpoint DELETE
+autenticato dell'app) per non lasciare promemoria fittizi attivi.
+
+Bug minore scoperto ma non risolto in questo giro (fuori scope): la
+cancellazione di un ricordo (`DELETE /api/memories/[id]`, soft-delete via
+`deleted_at`) fallisce con una violazione della policy RLS — non
+verificato se preesistente o specifico ai ricordi di tipo `medication`, da
+indagare separatamente. Per questo motivo i due ricordi di test ("Bivis" e
+"Bivis test 2") restano visibili in Ricordi/Timeline, senza più alcun
+farmaco/promemoria collegato (righe `medications` già cancellate) — solo
+testo residuo, cancellabili a mano dall'utente se vuole ripulire.
+
 ## [FATTO 2026-08-19] Interessi/preferenze — aggiunta "Fitness"
 Aggiunta la categoria "Fitness & palestre" tra gli interessi del profilo,
 così i consigli nei paraggi (NearbyForYou) suggeriscono palestre quando si
