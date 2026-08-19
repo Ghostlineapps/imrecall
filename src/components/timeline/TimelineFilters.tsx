@@ -7,6 +7,7 @@ const TYPES = [
   { value: "text", label: "Testo" },
   { value: "audio", label: "Voce" },
   { value: "image", label: "Foto" },
+  { value: "document", label: "File" },
   { value: "link", label: "Link" },
 ];
 
