@@ -4,10 +4,13 @@ import { useRef, useState } from "react";
 import { FileUp, CheckCircle2 } from "lucide-react";
 import { mutate } from "swr";
 
-// Per ora accettiamo solo formati che sappiamo leggere davvero (vedi
-// extractText.ts): PDF, TXT, CSV, MD. Word/Excel/PowerPoint arriveranno in
-// un secondo momento — vedi BACKLOG.md.
-const ACCEPTED = ".pdf,.txt,.csv,.md,application/pdf,text/plain,text/csv,text/markdown";
+// Formati che sappiamo leggere davvero (vedi extractText.ts): PDF, TXT,
+// CSV, MD, Word (.docx), Excel (.xlsx/.xls), PowerPoint (.pptx).
+const ACCEPTED =
+  ".pdf,.txt,.csv,.md,.docx,.xlsx,.xls,.pptx,application/pdf,text/plain,text/csv,text/markdown," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel," +
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 export function DocumentCapture({ onSaved }: { onSaved: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +81,7 @@ export function DocumentCapture({ onSaved }: { onSaved: () => void }) {
           if (file) handleFile(file);
         }}
       />
-      <p className="text-white/30 text-xs text-center px-4">PDF, TXT, CSV, MD — Word/Excel/PowerPoint in arrivo</p>
+      <p className="text-white/30 text-xs text-center px-4">PDF, Word, Excel, PowerPoint, TXT, CSV, MD</p>
       {uploading && <p className="text-white/50 text-sm">Analisi in corso…</p>}
       {detectedMessage && (
         <p className="text-primary-light text-sm flex items-center gap-1.5">
