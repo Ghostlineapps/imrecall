@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import clsx from "clsx";
+import { TextCapture } from "./TextCapture";
 import { AudioRecorder } from "./AudioRecorder";
 import { MeetingRecorder } from "./MeetingRecorder";
 import { ImageCapture } from "./ImageCapture";
 import { LinkCapture } from "./LinkCapture";
 import { DocumentCapture } from "./DocumentCapture";
 
-type Tab = "audio" | "meeting" | "image" | "link" | "document";
+type Tab = "text" | "audio" | "meeting" | "image" | "link" | "document";
 
 export function CaptureSheet({
   open,
@@ -34,7 +35,7 @@ export function CaptureSheet({
       <div className="relative w-full bg-surface rounded-t-3xl p-5 pb-8 animate-fade-in max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-1 bg-white/5 rounded-full p-1 overflow-x-auto">
-            {(["audio", "meeting", "image", "document", "link"] as Tab[]).map((t) => (
+            {(["text", "audio", "meeting", "image", "document", "link"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -43,15 +44,17 @@ export function CaptureSheet({
                   tab === t ? "bg-primary text-white" : "text-white/50"
                 )}
               >
-                {t === "audio"
-                  ? "Voce"
-                  : t === "meeting"
-                    ? "Riunione"
-                    : t === "image"
-                      ? "Foto"
-                      : t === "document"
-                        ? "File"
-                        : "Link"}
+                {t === "text"
+                  ? "Testo"
+                  : t === "audio"
+                    ? "Voce"
+                    : t === "meeting"
+                      ? "Riunione"
+                      : t === "image"
+                        ? "Foto"
+                        : t === "document"
+                          ? "File"
+                          : "Link"}
               </button>
             ))}
           </div>
@@ -60,6 +63,7 @@ export function CaptureSheet({
           </button>
         </div>
 
+        {tab === "text" && <TextCapture onSaved={onClose} />}
         {tab === "audio" && <AudioRecorder onSaved={onClose} />}
         {tab === "meeting" && <MeetingRecorder onSaved={onClose} />}
         {tab === "image" && <ImageCapture onSaved={onClose} />}
