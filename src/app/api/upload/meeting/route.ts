@@ -5,19 +5,20 @@ import { processMemory } from "@/lib/openai/classification";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Le riunioni sono registrazioni lunghe (fino a 30-90 minuti a seconda del
+// Le riunioni sono registrazioni lunghe (fino a 60-90 minuti a seconda del
 // piano), quindi soglie diverse dalla nota vocale breve (/api/upload/audio,
 // 5/30 min). Il sistema di abbonamenti non è ancora attivo (tutti su
 // "free" di default): questi numeri sono un tetto ragionevole per l'MVP,
 // da rivedere quando i piani a pagamento saranno reali.
-const MAX_SECONDS_FREE = 1800; // 30 min
+const MAX_SECONDS_FREE = 3600; // 60 min
 const MAX_SECONDS_PAID = 5400; // 90 min
 
-// Whisper accetta al massimo 25MB per file. Il limite in secondi qui sopra
-// è tarato per restare abbondantemente sotto quella soglia con la codifica
-// webm/opus usata da MeetingRecorder.tsx, ma aggiungiamo comunque un
-// controllo diretto sui byte come rete di sicurezza nel caso l'encoding
-// reale (dipende da browser/microfono) sia più pesante del previsto.
+// Whisper accetta al massimo 25MB per file. MeetingRecorder.tsx forza
+// esplicitamente un bitrate audio basso (32kbps, ok per il parlato) proprio
+// per restare ben sotto questa soglia anche a 90 minuti (~21.6MB attesi);
+// aggiungiamo comunque un controllo diretto sui byte come rete di sicurezza
+// nel caso l'encoding reale (dipende da browser/microfono) sia più pesante
+// del previsto.
 const MAX_FILE_BYTES = 24 * 1024 * 1024;
 
 // Cap sul testo salvato in `content` — stesso principio di MAX_STORED_CHARS
@@ -79,6 +80,17 @@ TEMI:
 - secondo tema trattato, con un accenno di dettaglio
 (continua per ogni tema rilevante, uno per riga)
 
+MAPPA:
+- primo argomento principale (poche parole, senza parentesi o due punti)
+  - eventuale sotto-punto (2 spazi di indentazione)
+  - eventuale sotto-punto
+- secondo argomento principale
+  - eventuale sotto-punto
+(massimo 2 livelli di profondità — argomento e sotto-punti — pensata per
+diventare una mappa mentale visiva: usa testo breve, senza parentesi,
+virgolette o due punti nel testo di ogni punto; ometti i sotto-punti se non
+ce ne sono per un argomento)
+
 Se dalla riunione emerge una scadenza chiara (pagamento, consegna, documento con validità...), aggiungi in fondo:
 DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
 
@@ -91,6 +103,49 @@ Puoi omettere le righe DEADLINE_DETECTED/APPOINTMENT_DETECTED se non pertinenti.
 
 TRASCRIZIONE:
 ${excerpt}`;
+}
+
+// Converte la sezione MAPPA: (elenco puntato con indentazione, vedi prompt
+// sopra) generata da GPT in sintassi mermaid "mindmap", così il frontend
+// (src/components/memory/MindMap.tsx) può renderizzarla come diagramma
+// visivo invece di un elenco testuale — la funzionalità "mind map" tipo
+// Plaud Note richiesta dall'utente. Salvata in metadata.mind_map, non nel
+// campo `content` (che resta testo semplice, letto anche da ricerca/chat).
+function buildMindMapMermaid(rawMap: string, rootLabel: string): string | null {
+  if (!rawMap.trim()) return null;
+
+  // Il testo dei nodi mermaid non deve contenere caratteri con significato
+  // sintattico (parentesi/parentesi quadre/graffe aprono forme diverse di
+  // nodo, i due punti sono usati per le icone) — li rimuoviamo per sicurezza
+  // anche se il prompt chiede già di evitarli, e tronchiamo per non avere
+  // nodi enormi nel diagramma.
+  const sanitize = (s: string) =>
+    s
+      .replace(/^[-*]\s*/, "")
+      .replace(/[()[\]{}:"]/g, "")
+      .trim()
+      .slice(0, 80);
+
+  const rootText = sanitize(rootLabel) || "Riunione";
+  const lines = ["mindmap", `  root((${rootText}))`];
+
+  let hasTopic = false;
+  for (const rawLine of rawMap.split("\n")) {
+    if (!rawLine.trim()) continue;
+    const leadingSpaces = rawLine.match(/^(\s*)/)?.[1].length ?? 0;
+    const label = sanitize(rawLine);
+    if (!label) continue;
+    // Il prompt chiede solo 2 livelli (argomento / sotto-punto), indentati
+    // con 2 spazi nel testo di GPT — qualunque indentazione >= 2 diventa
+    // livello 2, il resto livello 1 sotto il nodo radice.
+    const indent = leadingSpaces >= 2 ? "      " : "    ";
+    lines.push(`${indent}${label}`);
+    if (leadingSpaces < 2) hasTopic = true;
+  }
+
+  // Niente diagramma se non è emerso nemmeno un argomento di primo livello
+  // (es. risposta malformata) — meglio nessuna mappa che una mappa vuota.
+  return hasTopic ? lines.join("\n") : null;
 }
 
 // Le trascrizioni + il riassunto GPT su una riunione lunga possono richiedere
@@ -158,6 +213,7 @@ export async function POST(req: NextRequest) {
   let detected: { type: "deadline" | "appointment"; title: string } | null = null;
   let deadlineMatch: RegExpMatchArray | null = null;
   let appointmentMatch: RegExpMatchArray | null = null;
+  let mindMapMermaid: string | null = null;
 
   if (!fullTranscript || fullTranscript.trim().length < 20) {
     content =
@@ -179,12 +235,17 @@ export async function POST(req: NextRequest) {
       /RIASSUNTO:\s*([\s\S]*?)(?=\nTEMI:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
     );
     const topicsMatch = rawText.match(
-      /TEMI:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
+      /TEMI:\s*([\s\S]*?)(?=\nMAPPA:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
+    );
+    const mapMatch = rawText.match(
+      /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
     );
 
     if (titleMatch?.[1]?.trim()) title = titleMatch[1].trim();
     const summary = summaryMatch?.[1]?.trim() ?? "";
     const topics = topicsMatch?.[1]?.trim() ?? "";
+
+    mindMapMermaid = buildMindMapMermaid(mapMatch?.[1] ?? "", title);
 
     const truncatedTranscript = fullTranscript.trim().slice(0, MAX_STORED_CHARS);
     const truncatedNote =
@@ -208,6 +269,12 @@ export async function POST(req: NextRequest) {
       media_size: buffer.length,
       media_duration: duration,
       memory_date: new Date().toISOString(),
+      // Mappa mentale visiva (sintassi mermaid), generata dalla sezione
+      // MAPPA: del prompt — vedi buildMindMapMermaid sopra e
+      // src/components/memory/MindMap.tsx per il rendering. Riusa la
+      // colonna `metadata` jsonb già esistente, nessuna migrazione DB
+      // necessaria. Assente per registrazioni senza trascrizione utile.
+      ...(mindMapMermaid ? { metadata: { mind_map: mindMapMermaid } } : {}),
     })
     .select()
     .single();
