@@ -1,4 +1,5 @@
 import { TodayCard } from "@/components/home/TodayCard";
+import { MedicationsTodayCard } from "@/components/home/MedicationsTodayCard";
 import { StreakBadge } from "@/components/home/StreakBadge";
 import { NearbyForYou } from "@/components/home/NearbyForYou";
 import { LocationStatusCard } from "@/components/home/LocationStatusCard";
@@ -43,6 +44,12 @@ export default async function HomePage() {
             on_this_day / proximity / deadline / pre_trip in base a cosa ha
             priorità più alta oggi (vedi /api/insights/today). */}
         <TodayCard />
+
+        {/* Dosi di oggi (se ci sono farmaci attivi) — non fa parte del
+            resurfacing giornaliero sopra: si aggiorna in tempo reale e
+            arriva anche via notifica push puntuale, vedi
+            /api/cron/medications e BACKLOG.md. */}
+        <MedicationsTodayCard />
 
         <NearbyForYou />
 
