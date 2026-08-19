@@ -36,10 +36,9 @@ export default function SettingsPage() {
         <p className="text-xs text-white/40 mt-1">Alimentazione e interessi, per i consigli nei paraggi</p>
       </Link>
 
-      <Link href="/settings/location" className="card block">
-        <p className="font-medium">Spostamenti</p>
-        <p className="text-xs text-white/40 mt-1">Importa da Google Maps e tracciamento live</p>
-      </Link>
+      {/* "Spostamenti" non è più qui: è una funzione (traccia e mostra dove
+          sei stato), non una preferenza — vive in Dashboard, dove il suo
+          valore si vede davvero. Qui restano solo vere impostazioni. */}
 
       <Link href="/settings/notifications" className="card block">
         <p className="font-medium">Notifiche</p>
