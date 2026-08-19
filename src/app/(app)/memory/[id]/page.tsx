@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, FileUp } from "lucide-react";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { RelatedMemories } from "@/components/memory/RelatedMemories";
@@ -45,6 +45,16 @@ export default function MemoryDetailPage() {
         )}
         {memory.type === "audio" && memory.media_url && (
           <audio controls src={memory.media_url} className="w-full" />
+        )}
+        {memory.type === "document" && memory.media_url && (
+          <a
+            href={memory.media_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-ghost flex items-center gap-2 w-full justify-center"
+          >
+            <FileUp size={16} /> Apri file originale
+          </a>
         )}
         <p className="text-white/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
 
