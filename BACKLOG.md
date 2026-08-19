@@ -60,26 +60,60 @@ palestre" appare in automatico. Pubblicato e deployato in produzione.
     GPT-4o-mini per titolo/riassunto/temi + rilevamento scadenze/
     appuntamenti (stessa convenzione DEADLINE_DETECTED/APPOINTMENT_DETECTED)
     → salvataggio memoria (tipo "meeting") + embedding via processMemory().
-    Limiti durata per piano: 30 min free / 90 min premium (valori scelti da
-    me in assenza di piani a pagamento reali, da rivedere quando ci sarà un
-    vero sistema abbonamenti — vedi voce sopra). Limite file 24MB (sotto il
-    tetto di 25MB di Whisper). `maxDuration = 60` per il piano Vercel
-    Hobby, vista la trascrizione+riassunto potenzialmente lunghi.
-  - Traduzione: non è stato costruito un output bilingue separato — GPT
-    genera sempre titolo/riassunto in italiano indipendentemente dalla
-    lingua parlata nella riunione, il che copre l'intento originale della
-    richiesta ("+ traduzione") in modo implicito.
+    Limiti durata per piano: 60 min free / 90 min premium (alzato da 30 a
+    60 min su richiesta esplicita dell'utente il 19/08 — valori comunque
+    scelti da me in assenza di piani a pagamento reali, da rivedere quando
+    ci sarà un vero sistema abbonamenti — vedi voce sopra). Limite file
+    24MB (sotto il tetto di 25MB di Whisper) — per starci davvero anche a
+    60-90 minuti, `MeetingRecorder.tsx` ora forza un bitrate audio esplicito
+    di 32kbps (senza specificarlo il default del browser può arrivare a
+    ~128kbps, che avrebbe fatto sforare il limite ben prima dei 90 minuti
+    già promessi al piano premium — bug latente corretto insieme
+    all'innalzamento del limite free). `maxDuration = 60` per il piano
+    Vercel Hobby, vista la trascrizione+riassunto potenzialmente lunghi.
+  - Traduzione [aggiornato 19/08]: titolo/riassunto/temi/mappa mentale sono
+    sempre in italiano indipendentemente dalla lingua parlata (GPT li
+    genera così, indipendentemente dalla lingua originale). In un secondo
+    momento, su richiesta esplicita dell'utente ("ovviamente è in grado di
+    tradurre conversazioni... in italiano"), aggiunta anche la traduzione
+    INTEGRALE della trascrizione: se la riunione non è in italiano, GPT
+    genera anche una traduzione parola-per-parola dell'intero testo
+    (etichetta TRASCRIZIONE_TRADOTTA nel prompt), mostrata nel dettaglio
+    memoria insieme (non al posto) alla trascrizione originale — scelta
+    esplicita dell'utente tra "sostituisci", "tieni entrambe" e "lascia
+    com'è", ha scelto "tieni entrambe". Se la riunione è già in italiano
+    questa sezione viene omessa (nessuna traduzione ridondante). Alzato
+    `max_tokens` della chiamata GPT a 16000 per non troncare la traduzione
+    integrale su riunioni lunghe.
+  - Mappa mentale [aggiunto 19/08, su richiesta esplicita dell'utente dopo
+    aver chiesto se il prodotto facesse "le mappe come Plaud Note"]: GPT
+    genera anche una sezione MAPPA (argomenti/sotto-argomenti, max 2
+    livelli), convertita lato server in sintassi mermaid "mindmap"
+    (`buildMindMapMermaid` in route.ts) e salvata in
+    `memories.metadata.mind_map` (riuso della colonna jsonb esistente,
+    nessuna migrazione DB necessaria). Renderizzata lato client come
+    diagramma SVG dal nuovo componente `MindMap.tsx` (import dinamico di
+    "mermaid", mai lato server) nella pagina di dettaglio memoria, subito
+    sotto il player audio. Se il rendering fallisce (sintassi imprevista)
+    la card semplicemente non appare, senza rompere il resto della pagina.
+    Aggiunta dipendenza `mermaid` a package.json (non ho potuto verificare
+    l'installazione in locale — il registro npm non era raggiungibile in
+    sandbox in quel momento — ma il build su Vercel l'ha risolta senza
+    problemi).
   - UI: nuovo componente `MeetingRecorder.tsx` (icona persone, timer
     HH:MM:SS per registrazioni lunghe, messaggi di errore dedicati per
     durata/dimensione superata), nuova tab "Riunione" nella capture sheet e
     pulsante dedicato nella CaptureBar, icona `Users` in MemoryCard e nuovo
     filtro "Riunioni" in TimelineFilters, player audio abilitato anche per
     il tipo "meeting" nella pagina di dettaglio memoria.
-  - Deploy verificato su Vercel: build "Ready" in produzione per tutti e 5
-    i commit (migrazione, route API, UI di cattura, UI timeline, player).
+  - Deploy verificato su Vercel: build "Ready" in produzione per tutti gli
+    8 commit di questa feature (migrazione, route API, UI di cattura, UI
+    timeline, player, dipendenza mermaid, mappa mentale, bitrate/durata,
+    traduzione trascrizione integrale).
   - NON ancora testato dal vivo con una registrazione reale (richiede
     microfono reale, non verificabile da automazione browser) — da provare
-    dall'utente tramite l'icona "persone" nella barra di cattura.
+    dall'utente tramite l'icona "persone" nella barra di cattura, incluse
+    mappa mentale e traduzione su una call non in italiano.
   Restano fuori scope, come discusso: (2) integrazione nativa con bot che
   si unisce alla riunione o cattura audio di sistema/scheda browser — molto
   più solida (come Otter/Fireflies) ma richiede integrazioni/API separate
