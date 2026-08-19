@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Mic, Camera, Link2, FileUp, Send } from "lucide-react";
+import { Mic, Users, Camera, Link2, FileUp, Send } from "lucide-react";
 import { CaptureSheet } from "./CaptureSheet";
 import { useCapture } from "@/hooks/useCapture";
 
 export function CaptureBar() {
   const [text, setText] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [sheetTab, setSheetTab] = useState<"audio" | "image" | "link" | "document">("audio");
+  const [sheetTab, setSheetTab] = useState<"audio" | "meeting" | "image" | "link" | "document">("audio");
   const { captureText, isSaving } = useCapture();
 
   async function handleSend() {
@@ -17,7 +17,7 @@ export function CaptureBar() {
     setText("");
   }
 
-  function openSheet(tab: "audio" | "image" | "link" | "document") {
+  function openSheet(tab: "audio" | "meeting" | "image" | "link" | "document") {
     setSheetTab(tab);
     setSheetOpen(true);
   }
@@ -40,6 +40,13 @@ export function CaptureBar() {
           className="p-2 text-white/50 hover:text-white transition-colors"
         >
           <Mic size={18} />
+        </button>
+        <button
+          onClick={() => openSheet("meeting")}
+          aria-label="Registra riunione"
+          className="p-2 text-white/50 hover:text-white transition-colors"
+        >
+          <Users size={18} />
         </button>
         <button
           onClick={() => openSheet("image")}
