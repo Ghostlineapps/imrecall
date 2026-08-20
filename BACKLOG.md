@@ -2,6 +2,43 @@
 
 Aggiornato: 2026-08-20
 
+## [FATTO 2026-08-20] Cancellare un farmaco (via ricordo) ora ferma davvero le notifiche
+Bug segnalato dall'utente: aveva ricancellato dei farmaci già presenti,
+ricreandoli, ma quelli vecchi hanno continuato a generare notifiche di
+assunzione anche dopo la cancellazione ("stamattina ho avuto due notifiche").
+
+Causa confermata in produzione: l'unico modo che l'utente ha per "cancellare
+un farmaco" è cancellare il ricordo che lo rappresenta, tramite
+`soft_delete_memory()` (RPC introdotta nella migrazione 018). Quella funzione
+marca `deleted_at` sulla riga in `memories`, ma non tocca in alcun modo la
+riga collegata in `medications` — che restava `active = true` e continuava a
+essere considerata dal cron `/api/cron/medications`. Non esiste, in nessun
+punto della UI, un'azione che chiami `DELETE /api/medications/[id]`
+direttamente (verificato via grep su `MedicationSchedule.tsx`,
+`MedicationsTodayCard.tsx`, `MedicationCapture.tsx`).
+
+Confermato via query diretta in produzione: esattamente 2 farmaci erano
+rimasti "fantasma" (`active = true` con il ricordo collegato già cancellato
+la sera del 19/08) — "Bivis" (08:00) e "Ezetataros" (19:30), le due
+notifiche ricevute quella mattina.
+
+Fix (migrazione 021): `soft_delete_memory()` ora, nella stessa funzione
+SECURITY DEFINER, disattiva (`active = false`) qualunque riga di
+`medications` collegata al ricordo appena cancellato (`memory_id = p_id`).
+Scelto "disattiva" e non "cancella la riga farmaco": stesso pattern
+soft-delete già usato per i ricordi, mantiene lo storico/dose per eventuale
+consultazione futura senza generare più promemoria.
+
+Applicato subito in produzione: ricreata la funzione con il fix, e disattivati
+manualmente con una query una tantum i 2 farmaci fantasma già esistenti
+(Bivis ed Ezetataros) — verificato `active = false` su entrambi dopo il fix,
+niente più notifiche per loro da domani.
+
+Nota: la correzione retroattiva è stata su misura per questi 2 farmaci
+specifici (un'unica UPDATE mirata sui loro id); da qui in avanti ogni nuova
+cancellazione di un ricordo-farmaco disattiva automaticamente il farmaco
+collegato, grazie al fix nella funzione.
+
 ## [FATTO 2026-08-20] Consigli nei paraggi: match anche su "cuisine", non solo "diet"
 L'utente (che abita in campagna, dove i tag `diet:*` di OpenStreetMap sono
 rari) ha chiesto se impostando "Vegano" nel profilo sarebbero comparsi
