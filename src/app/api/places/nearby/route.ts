@@ -17,16 +17,39 @@ const MAX_RESULTS = 12;
 
 // Ogni voce produce una o più clausole Overpass QL (node["key"~"a|b"]).
 // Il raggio e le coordinate vengono sostituiti in fetchOverpass().
+//
+// Per ogni dieta cerchiamo in due modi, unione (OR) fra le due clausole:
+// 1) diet:X=yes|only — il tag "dietetico" dedicato, il più preciso ma raro
+//    (bisogna che qualcuno l'abbia mappato esplicitamente sul locale).
+// 2) cuisine~X — il tag "tipo di cucina", usato più spesso su OSM per
+//    locali specializzati (es. un ristorante indicato cuisine=vegan).
+// Aggiunto per allargare la copertura in zone poco mappate (richiesta
+// esplicita dell'utente, che abita in campagna dove i tag diet:* sono rari).
+// Non un tag OSM ufficiale ma un secondo modo, complementare, di trovare
+// gli stessi locali. gluten_free/halal/kosher hanno un cuisine equivalente
+// abbastanza diffuso; lactose_free e pescetarian non hanno un valore
+// cuisine standard riconosciuto su OSM, quindi restano solo sul tag
+// diet:* — inventare un tag inesistente darebbe risultati falsati, non
+// più risultati veri.
+const AMENITY = '["amenity"~"^(restaurant|cafe|fast_food)$"]';
 const DIET_TAG_MAP: Record<string, string> = {
-  vegan: 'node["diet:vegan"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
+  vegan:
+    `node["diet:vegan"~"yes|only"]${AMENITY}(around:R,LAT,LON);` +
+    `node["cuisine"~"vegan"]${AMENITY}(around:R,LAT,LON);`,
   vegetarian:
-    'node["diet:vegetarian"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
-  gluten_free: 'node["diet:gluten_free"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
-  lactose_free: 'node["diet:lactose_free"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
-  halal: 'node["diet:halal"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
-  kosher: 'node["diet:kosher"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
-  pescetarian:
-    'node["diet:vegetarian"~"yes|only"]["amenity"~"^(restaurant|cafe|fast_food)$"](around:R,LAT,LON);',
+    `node["diet:vegetarian"~"yes|only"]${AMENITY}(around:R,LAT,LON);` +
+    `node["cuisine"~"vegetarian"]${AMENITY}(around:R,LAT,LON);`,
+  gluten_free:
+    `node["diet:gluten_free"~"yes|only"]${AMENITY}(around:R,LAT,LON);` +
+    `node["cuisine"~"gluten_free"]${AMENITY}(around:R,LAT,LON);`,
+  lactose_free: `node["diet:lactose_free"~"yes|only"]${AMENITY}(around:R,LAT,LON);`,
+  halal:
+    `node["diet:halal"~"yes|only"]${AMENITY}(around:R,LAT,LON);` +
+    `node["cuisine"~"halal"]${AMENITY}(around:R,LAT,LON);`,
+  kosher:
+    `node["diet:kosher"~"yes|only"]${AMENITY}(around:R,LAT,LON);` +
+    `node["cuisine"~"kosher"]${AMENITY}(around:R,LAT,LON);`,
+  pescetarian: `node["diet:vegetarian"~"yes|only"]${AMENITY}(around:R,LAT,LON);`,
 };
 
 const INTEREST_TAG_MAP: Record<string, string> = {
