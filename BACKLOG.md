@@ -1,6 +1,38 @@
 # IMRECALL — backlog (idee/fix rimandati, non ancora implementati)
 
-Aggiornato: 2026-08-19
+Aggiornato: 2026-08-20
+
+## [FATTO 2026-08-20] Consigli nei paraggi: match anche su "cuisine", non solo "diet"
+L'utente (che abita in campagna, dove i tag `diet:*` di OpenStreetMap sono
+rari) ha chiesto se impostando "Vegano" nel profilo sarebbero comparsi
+ristoranti vegani/con alternative vegane — confermato di sì in linea di
+principio, ma con un limite reale di copertura: `/api/places/nearby`
+cercava solo il tag `diet:vegan=yes|only`, presente su OSM solo dove
+qualcuno l'ha mappato esplicitamente. Richiesta esplicita: allargare la
+ricerca "per tutte le categorie".
+
+Fix: `DIET_TAG_MAP` in `src/app/api/places/nearby/route.ts` ora unisce
+(OR, non AND) due clausole Overpass per ogni dieta — il tag `diet:X`
+dedicato E il tag `cuisine` (più diffuso su OSM per locali specializzati,
+es. `cuisine=vegan`). Applicato a vegano, vegetariano, senza glutine,
+halal, kosher. Lasciati SOLO sul tag `diet:*` intollerante al lattosio e
+pescetariano, perché OSM non ha un valore `cuisine` equivalente
+riconosciuto per questi due — aggiungerne uno inventato avrebbe prodotto
+falsi positivi, non più risultati veri.
+
+Chiarito anche via domanda diretta dell'utente: se non si seleziona
+nessuna dieta, il filtro dietetico non si applica affatto (nessun tag
+"onnivoro" esiste su OSM) — si vede la lista generale di ristoranti/locali
+in base agli interessi impostati (o cibo+caffè di default se il profilo è
+vuoto), non una categoria "onnivori" a sé.
+
+Verificato TypeScript (mirror + `tsc --noEmit --strict`, nessun nuovo
+errore — nota: il comando di verifica standalone richiede `--lib
+esnext,dom` per non generare un falso positivo su `.replaceAll()`, già
+usato nel file prima di questa modifica; il `tsconfig.json` del progetto
+ha già `lib: ["dom","dom.iterable","esnext"]`, quindi nessun problema
+reale in build). Pubblicato in un commit, build "Ready" su Vercel con
+badge "Production".
 
 ## [FATTO 2026-08-19] Fix definitivo cancellazione ricordi (RLS) + ricorrenza farmaci flessibile + UX cattura farmaco + sezione Salute
 Tre richieste dell'utente nello stesso giro: (1) i due ricordi di test
