@@ -2,6 +2,47 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Esportazione nota spese in PDF, con foto degli scontrini
+Richiesta dell'utente subito dopo la sezione Spese: poter esportare tutto su
+un "foglio Excel" da stampare/condividere/scaricare, foto degli scontrini
+incluse. Chiarito con l'utente (via domanda rapida) che il formato voluto era
+un PDF stampabile con le foto, non un Excel di soli dati — e che il periodo
+va scelto al momento dell'esportazione, non fissato.
+
+Non generiamo il PDF sul server: niente libreria PDF aggiunta (avrebbe
+richiesto `npm install`, non eseguibile in questo ambiente perché il
+registro npm è bloccato — vedi nota tecnica in fondo). La nota spese è
+invece una pagina web dedicata, pensata per la stampa
+(`/expenses/export?from=...&to=...`, nuovo gruppo di route `(print)` senza
+BottomNav/FAB): il pulsante "Stampa / Salva come PDF" apre la finestra di
+stampa del browser, dove "Salva come PDF" produce un vero file PDF — stesso
+risultato, senza dipendenze nuove. Funziona anche per stampare su carta o
+condividere la pagina.
+
+Contenuto della nota: intestazione con nome e periodo, totale e riepilogo
+per categoria, tabella di dettaglio di tutte le spese nel periodo, e infine
+le foto di tutti gli scontrini fotografati (link firmati generati al volo,
+brevi, non quelli scaduti salvati al momento del caricamento).
+
+Il pulsante "Esporta" (icona, accanto a "Aggiungi spesa" in /expenses) apre
+un pannello per scegliere il periodo: mese corrente, un mese specifico, o un
+intervallo di date libero.
+
+Verificato end-to-end in produzione: creata una spesa di test, generata la
+nota per il mese corrente dal pulsante Esporta, verificato che la pagina
+mostri correttamente intestazione/totale/categoria/tabella con i dati
+corretti, poi spesa di test cancellata. La lettura delle foto scontrino in
+PDF non è stata testata con un vero scontrino fotografato (richiederebbe
+un'immagine reale), ma riusa lo stesso URL firmato già in uso altrove
+nell'app.
+
+**Nota tecnica**: in questa sessione l'accesso al registro npm è bloccato
+(errore 403 su qualunque pacchetto, non solo quelli per il PDF) e il
+repository ha un `package-lock.json` committato — installare una libreria
+nuova avrebbe richiesto rigenerare il lockfile senza poterlo verificare.
+Da qui la scelta di stampa-da-browser invece di una libreria PDF lato
+server: zero dipendenze nuove, stesso risultato per l'utente.
+
 ## [FATTO 2026-08-21] Sezione Spese: nota spese da scontrini + budget mensile
 Richiesta dell'utente ("andiamo avanti con budget e nota spese?"), già
 annunciata come "prossimamente" nel post Instagram del 20/08. Stesso schema
