@@ -2,6 +2,39 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Logo scelto: "Orbita nel Monogramma", icone rigenerate
+Dopo l'artifact con le quattro proposte (Orbita, Eco, Scia, Monogramma) e su
+richiesta dell'utente ("prova a mixarli"), sono stati proposti due mix.
+L'utente ha scelto la direzione "monogramma" lasciando la decisione finale
+a Claude tra le due varianti disponibili con quel nome: il concetto
+originale 04 (lettere "IM") o il mix "Orbita nel Monogramma" (cerchio con
+puntino di Orbita dentro la stessa piastrella sfumata). Scelto il mix:
+stessa forma/contenitore già riconoscibile sul telefono, ma con il segno
+davvero legato all'interfaccia (lo stesso cerchio+puntino del cerchio nella
+Dashboard) invece di due lettere generiche — coerente con l'obiettivo
+originale "identità", non solo "un'icona qualsiasi".
+
+- `public/icon-192.png` e `public/icon-512.png` rigenerati via Python/Pillow
+  (nessuna libreria npm: registro bloccato in questo ambiente, vedi nota
+  tecnica in fondo) — piastrella piena con sfumatura `#4C7EA0` → `#375F7D`,
+  cerchio+puntino bianchi al centro, piccolo puntino "in orbita" in alto a
+  destra. Full-bleed, senza angoli arrotondati disegnati a mano: iOS/Android
+  applicano la propria maschera, arrotondare anche noi avrebbe creato un
+  doppio bordo visibile.
+- `public/manifest.json`: `background_color` da `#0F0F11` (nero, vecchio
+  tema) a `#EAF2F8` (celeste chiaro, lo sfondo reale della Dashboard) — è il
+  colore mostrato durante lo splash screen d'avvio della PWA, ora coerente
+  con la prima schermata vera. `theme_color` da `#0F0F11` a `#375F7D`
+  (accent scuro), per una barra di stato/status bar iOS coerente col
+  gradiente della nuova icona invece del nero del tema vecchio.
+- `src/app/layout.tsx`: `viewport.themeColor` allineato allo stesso
+  `#375F7D` (prima era ancora `#0F0F11` anche qui, doppia fonte della
+  stessa incoerenza).
+
+Non toccato: l'header della Dashboard resta solo testo "IMRECALL" — il
+segno non è stato ancora aggiunto lì, non richiesto esplicitamente in
+questo giro. Possibile prossimo passo se il logo convince anche lì.
+
 ## [FATTO 2026-08-21] Icona home-screen iOS: da placeholder generico a icona vera
 L'utente ha segnalato "manca un logo identificativo", e ha poi mandato uno
 screenshot della propria home iPhone: l'icona IMRECALL non era nemmeno il
