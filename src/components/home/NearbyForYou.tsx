@@ -70,7 +70,7 @@ export function NearbyForYou() {
   );
 
   if (locating || (coords && isLoading)) {
-    return <div className="card h-24 animate-pulse bg-white/5" />;
+    return <div className="card-light h-24 animate-pulse bg-celeste-navy/5" />;
   }
 
   if (!coords) return null;
@@ -81,12 +81,12 @@ export function NearbyForYou() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2 text-white/70 text-sm font-medium">
+        <div className="flex items-center gap-2 text-celeste-muted text-sm font-medium">
           <Compass size={16} />
           <span>Nei tuoi paraggi</span>
         </div>
         {!data?.hasPreferences && (
-          <Link href="/settings/profile" className="text-xs text-primary-light">
+          <Link href="/settings/profile" className="text-xs text-celeste-accentDark">
             Personalizza
           </Link>
         )}
@@ -94,13 +94,13 @@ export function NearbyForYou() {
 
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
         {recommendations.map((r: any) => (
-          <div key={r.id} className="card min-w-[160px] space-y-1 shrink-0">
-            <div className="flex items-center gap-1.5 text-primary-light text-xs">
+          <div key={r.id} className="card-light min-w-[160px] space-y-1 shrink-0">
+            <div className="flex items-center gap-1.5 text-celeste-accentDark text-xs">
               <MapPin size={12} />
               <span>{labelFor(r.category)}</span>
             </div>
-            <p className="text-sm font-medium leading-snug">{r.name}</p>
-            <p className="text-xs text-white/40">{r.distance_km} km</p>
+            <p className="text-sm font-medium leading-snug text-celeste-navy">{r.name}</p>
+            <p className="text-xs text-celeste-muted">{r.distance_km} km</p>
           </div>
         ))}
       </div>

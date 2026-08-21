@@ -36,6 +36,19 @@ export function DashboardHub() {
 
   return (
     <div className="relative mx-auto" style={{ width: RING_R * 2 + BTN_SIZE, height: CENTER_Y + RING_R + BTN_SIZE / 2 }}>
+      {/* Bagliore sfocato dietro al cerchio: senza, il cerchio galleggia su
+          uno sfondo piatto senza alcuna profondità — vedi redesign
+          2026-08-21 ("pagina troppo piatta"). */}
+      <div
+        className="absolute rounded-full bg-celeste-accent/10 blur-3xl pointer-events-none"
+        style={{
+          width: RING_R * 2.1,
+          height: RING_R * 2.1,
+          left: RING_R + BTN_SIZE / 2 - RING_R * 1.05,
+          top: CENTER_Y - RING_R * 1.05,
+        }}
+      />
+
       {/* Guida visiva del cerchio */}
       <div
         className="absolute rounded-full border-2 border-dashed border-celeste-accent/25"
@@ -55,14 +68,14 @@ export function DashboardHub() {
           <Link
             key={it.href}
             href={it.href}
-            className="absolute flex flex-col items-center gap-1.5"
+            className="absolute flex flex-col items-center gap-1.5 group"
             style={{
               width: BTN_SIZE,
               left: RING_R + BTN_SIZE / 2 + x - BTN_SIZE / 2,
               top: CENTER_Y + y - BTN_SIZE / 2,
             }}
           >
-            <span className="w-full aspect-square rounded-full bg-gradient-to-br from-celeste-accent/80 to-celeste-accent flex items-center justify-center text-white shadow-lg shadow-celeste-navy/20">
+            <span className="w-full aspect-square rounded-full bg-gradient-to-br from-celeste-accent to-celeste-accentDark flex items-center justify-center text-white shadow-lg shadow-celeste-navy/25 transition-transform duration-150 group-hover:scale-105 group-active:scale-95">
               <Icon size={26} strokeWidth={1.8} />
             </span>
             <span className="text-xs font-semibold text-celeste-navy">{it.label}</span>
@@ -72,7 +85,7 @@ export function DashboardHub() {
 
       <button
         onClick={() => setSheetOpen(true)}
-        className="absolute rounded-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white shadow-xl shadow-celeste-navy/30"
+        className="absolute rounded-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white shadow-xl shadow-celeste-navy/30 transition-transform duration-150 hover:scale-105 active:scale-95"
         style={{
           width: BTN_SIZE * 1.55,
           height: BTN_SIZE * 1.55,

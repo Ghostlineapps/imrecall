@@ -41,13 +41,13 @@ export function MedicationsTodayCard() {
   }
 
   return (
-    <div className="card space-y-3">
-      <div className="flex items-center gap-2 text-white/70 text-sm font-medium">
+    <div className="card-light space-y-3">
+      <div className="flex items-center gap-2 text-celeste-muted text-sm font-medium">
         <Pill size={16} />
         <span>Farmaci di oggi</span>
       </div>
       {isLoading ? (
-        <div className="h-10 animate-pulse bg-white/5 rounded-xl" />
+        <div className="h-10 animate-pulse bg-celeste-navy/5 rounded-xl" />
       ) : (
         <div className="space-y-1.5">
           {schedule.map((s: any) => (
@@ -59,16 +59,16 @@ export function MedicationsTodayCard() {
               <span
                 className={clsx(
                   "w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors",
-                  s.taken ? "bg-primary border-primary" : "border-white/25"
+                  s.taken ? "bg-celeste-accent border-celeste-accent" : "border-celeste-muted/40"
                 )}
               >
                 {s.taken && <Check size={12} className="text-white" />}
               </span>
-              <span className={clsx("text-sm flex-1", s.taken ? "text-white/40 line-through" : "text-white/85")}>
+              <span className={clsx("text-sm flex-1", s.taken ? "text-celeste-muted line-through" : "text-celeste-navy")}>
                 {s.name}
                 {s.dose ? ` — ${s.dose}` : ""}
               </span>
-              <span className="text-xs text-white/40">{s.time}</span>
+              <span className="text-xs text-celeste-muted">{s.time}</span>
             </button>
           ))}
         </div>

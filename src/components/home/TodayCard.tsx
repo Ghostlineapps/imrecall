@@ -25,12 +25,12 @@ export function TodayCard() {
   const { data, isLoading } = useSWR("/api/insights/today", fetcher);
 
   if (isLoading) {
-    return <div className="card h-32 animate-pulse bg-white/5" />;
+    return <div className="card-light h-32 animate-pulse bg-celeste-navy/5" />;
   }
 
   if (!data?.candidate) {
     return (
-      <div className="card text-center py-8 text-white/40">
+      <div className="card-light text-center py-8 text-celeste-muted">
         <p className="text-sm">
           Ancora nessun ricordo da riproporti oggi. Inizia a catturare
           qualcosa qui sotto — torneremo a mostrartelo al momento giusto.
@@ -45,14 +45,14 @@ export function TodayCard() {
   return (
     <Link
       href={memory_id ? `/memory/${memory_id}` : "#"}
-      className="card block space-y-2 border-primary/30 bg-gradient-to-br from-primary/10 to-transparent animate-fade-in"
+      className="card-light block space-y-2 border-celeste-accent/25 bg-gradient-to-br from-celeste-accent/10 to-transparent animate-fade-in"
     >
-      <div className="flex items-center gap-2 text-primary-light text-xs font-medium">
+      <div className="flex items-center gap-2 text-celeste-accentDark text-xs font-medium">
         <Icon size={14} />
         <span>{labelFor(type)}</span>
       </div>
-      <p className="font-medium leading-snug">{title}</p>
-      <p className="text-sm text-white/60 leading-relaxed">{body}</p>
+      <p className="font-medium leading-snug text-celeste-navy">{title}</p>
+      <p className="text-sm text-celeste-muted leading-relaxed">{body}</p>
     </Link>
   );
 }
