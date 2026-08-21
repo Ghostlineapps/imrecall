@@ -5,6 +5,7 @@ import { NearbyForYou } from "@/components/home/NearbyForYou";
 import { LocationStatusCard } from "@/components/home/LocationStatusCard";
 import { DashboardSearchBar } from "@/components/home/DashboardSearchBar";
 import { DashboardHub } from "@/components/home/DashboardHub";
+import { Logomark } from "@/components/brand/Logomark";
 import { createClient } from "@/lib/supabase/server";
 
 // Prima si chiamava "Home" e non era chiaro a cosa servisse: ora è la
@@ -52,7 +53,14 @@ export default async function HomePage() {
 
         <div className="relative flex items-start justify-between gap-3">
           <div>
-            <p className="text-white/70 text-xs font-semibold tracking-wide uppercase">IMRECALL</p>
+            {/* Prima era solo la scritta "IMRECALL": un'etichetta, non un
+                segno riconoscibile — lo stesso problema dell'icona sul
+                telefono prima del fix. Ora il logomark scelto affianca il
+                testo, la stessa forma già installata come icona app. */}
+            <div className="flex items-center gap-1.5">
+              <Logomark size={15} className="opacity-90" />
+              <p className="text-white/70 text-xs font-semibold tracking-wide uppercase">IMRECALL</p>
+            </div>
             <h1 className="text-2xl font-extrabold text-white leading-tight mt-1">
               {greeting()}
               {firstName ? `, ${firstName}` : ""}
