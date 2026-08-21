@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("dietary_preferences, interests")
+    .select("dietary_preferences, interests, monthly_budget")
     .eq("id", user.id)
     .single();
 
@@ -23,6 +23,7 @@ export async function GET() {
   return NextResponse.json({
     dietary_preferences: profile?.dietary_preferences ?? [],
     interests: profile?.interests ?? [],
+    monthly_budget: profile?.monthly_budget ?? null,
   });
 }
 
@@ -34,7 +35,7 @@ export async function PATCH(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const update: Record<string, string[]> = {};
+  const update: Record<string, unknown> = {};
 
   // Validiamo contro il set chiuso di opzioni: valori sconosciuti vengono
   // scartati silenziosamente invece di rifiutare la richiesta, così il
@@ -47,6 +48,17 @@ export async function PATCH(req: NextRequest) {
   }
   if (Array.isArray(body.interests)) {
     update.interests = body.interests.filter((v: unknown) => INTEREST_VALUES.includes(v as string));
+  }
+  // Budget mensile per la sezione Spese (migrazione 022) — null per
+  // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
+  if (body.monthly_budget === null) {
+    update.monthly_budget = null;
+  } else if (body.monthly_budget !== undefined) {
+    const budget = Number(body.monthly_budget);
+    if (!Number.isFinite(budget) || budget < 0) {
+      return NextResponse.json({ error: "invalid_monthly_budget" }, { status: 400 });
+    }
+    update.monthly_budget = budget;
   }
 
   if (Object.keys(update).length === 0) {
