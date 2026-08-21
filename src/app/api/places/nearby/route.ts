@@ -63,6 +63,20 @@ const INTEREST_TAG_MAP: Record<string, string> = {
   fitness: 'node["leisure"~"^(fitness_centre|sports_centre)$"](around:R,LAT,LON);',
 };
 
+// Il tag `website` (o, più raramente, `contact:website`) su OSM non è
+// garantito avere uno schema (es. "www.locale.it" invece di
+// "https://www.locale.it") né essere singolo (a volte più URL separati da
+// ";" per più sedi/social). Normalizziamo qui invece che lato client: solo
+// il primo valore, e schema forzato a https se assente, così il frontend
+// può usare il campo direttamente come href senza dover ripetere questa
+// logica di pulizia.
+function normalizeWebsite(raw?: string): string | null {
+  if (!raw) return null;
+  const first = raw.split(";")[0].trim();
+  if (!first) return null;
+  return /^https?:\/\//i.test(first) ? first : `https://${first}`;
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -150,6 +164,11 @@ export async function GET(req: NextRequest) {
           latitude: el.lat,
           longitude: el.lon,
           distance_km: Math.round(haversineKm(lat, lon, el.lat, el.lon) * 10) / 10,
+          // Richiesta utente: poter cliccare il suggerimento per aprirne il
+          // sito, "ovviamente se hanno un sito" — null quando non mappato,
+          // il frontend si limita a non rendere il suggerimento cliccabile
+          // in quel caso invece di mostrare un link rotto.
+          website: normalizeWebsite(el.tags.website ?? el.tags["contact:website"]),
         };
       })
       .sort((a, b) => a.distance_km - b.distance_km)
