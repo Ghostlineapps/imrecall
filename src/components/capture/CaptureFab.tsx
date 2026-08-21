@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Plus } from "lucide-react";
 import { CaptureSheet } from "./CaptureSheet";
 
@@ -12,7 +13,16 @@ import { CaptureSheet } from "./CaptureSheet";
  * occupare spazio permanente sullo schermo.
  */
 export function CaptureFab() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // Sulla Dashboard il centro del cerchio (DashboardHub) è già il pulsante
+  // di cattura primario, con tanto di etichetta "Tocca per aggiungere" —
+  // avere anche questo fluttuante a pochi centimetri di distanza era due
+  // pulsanti identici per la stessa identica azione, uno dei motivi per cui
+  // la pagina sembrava confusa/anonima invece che curata (redesign
+  // 2026-08-21). Lo nascondiamo solo qui; resta su tutte le altre schermate.
+  if (pathname === "/home") return null;
 
   return (
     <>
