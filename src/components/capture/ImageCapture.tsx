@@ -36,12 +36,18 @@ async function extractPhotoCoords(file: File): Promise<{ latitude: number; longi
 export function ImageCapture({
   onSaved,
   isHealth = false,
+  isExpense = false,
 }: {
   onSaved: () => void;
   // true quando la foto viene caricata dalla sezione Salute — marca la
   // memoria come is_health così compare nella lista referti/esami (vedi
   // migrazione 020), senza alcun effetto su categorie o ricerca generica.
   isHealth?: boolean;
+  // true quando la foto viene caricata dalla sezione Spese — marca la
+  // memoria come is_expense (vedi migrazione 022). La lettura dello
+  // scontrino (importo/negozio/categoria) funziona comunque da qualsiasi
+  // foto, non solo da qui — vedi RECEIPT_DETECTED in /api/upload/image.
+  isExpense?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -78,14 +84,16 @@ export function ImageCapture({
         formData.append("longitude", String(coords.longitude));
       }
       if (isHealth) formData.append("is_health", "true");
+      if (isExpense) formData.append("is_expense", "true");
 
       const res = await fetch("/api/upload/image", { method: "POST", body: formData });
       if (!res.ok) throw new Error("upload_failed");
       const data = await res.json();
 
-      // Aggiorniamo sia i ricordi che, se rilevato, appuntamenti/scadenze:
-      // così chi ha già quella pagina aperta la vede aggiornata subito,
-      // invece di doversi fidare che sia successo qualcosa in background.
+      // Aggiorniamo sia i ricordi che, se rilevato, appuntamenti/scadenze/
+      // spese: così chi ha già quella pagina aperta la vede aggiornata
+      // subito, invece di doversi fidare che sia successo qualcosa in
+      // background.
       mutate("/api/memories");
 
       if (data?.detected?.type === "appointment") {
@@ -94,6 +102,9 @@ export function ImageCapture({
       } else if (data?.detected?.type === "deadline") {
         mutate("/api/deadlines");
         setDetectedMessage(`Scadenza creata: ${data.detected.title}`);
+      } else if (data?.detected?.type === "expense") {
+        mutate("/api/expenses");
+        setDetectedMessage(`Spesa registrata: ${data.detected.title} — puoi correggerla in Spese se serve`);
       }
 
       // Se abbiamo rilevato qualcosa, mostriamo la conferma un attimo prima

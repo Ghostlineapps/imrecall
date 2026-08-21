@@ -10,8 +10,9 @@ import { ImageCapture } from "./ImageCapture";
 import { LinkCapture } from "./LinkCapture";
 import { DocumentCapture } from "./DocumentCapture";
 import { MedicationCapture } from "./MedicationCapture";
+import { ExpenseCapture } from "./ExpenseCapture";
 
-type Tab = "text" | "audio" | "meeting" | "image" | "link" | "document" | "medication";
+type Tab = "text" | "audio" | "meeting" | "image" | "link" | "document" | "medication" | "expense";
 
 const ALL_TABS: Tab[] = ["text", "audio", "meeting", "image", "document", "medication", "link"];
 
@@ -25,12 +26,17 @@ export function CaptureSheet({
   // lista referti/esami — senza toccare in alcun modo etichette,
   // categorizzazione o ricerca generica (vedi migrazione 020).
   healthMode = false,
+  // Modalità "Spese" (vedi sezione Spese in Dashboard, migrazione 022): le
+  // foto caricate da qui vengono marcate is_expense=true e passano dalla
+  // lettura automatica dello scontrino (vedi /api/upload/image).
+  expenseMode = false,
 }: {
   open: boolean;
   onClose: () => void;
   initialTab: Tab;
   allowedTabs?: Tab[];
   healthMode?: boolean;
+  expenseMode?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const tabs = allowedTabs ?? ALL_TABS;
@@ -68,7 +74,9 @@ export function CaptureSheet({
                           ? "File"
                           : t === "medication"
                             ? "Farmaco"
-                            : "Link"}
+                            : t === "expense"
+                              ? "Spesa"
+                              : "Link"}
               </button>
             ))}
           </div>
@@ -80,9 +88,10 @@ export function CaptureSheet({
         {tab === "text" && <TextCapture onSaved={onClose} />}
         {tab === "audio" && <AudioRecorder onSaved={onClose} />}
         {tab === "meeting" && <MeetingRecorder onSaved={onClose} />}
-        {tab === "image" && <ImageCapture onSaved={onClose} isHealth={healthMode} />}
+        {tab === "image" && <ImageCapture onSaved={onClose} isHealth={healthMode} isExpense={expenseMode} />}
         {tab === "document" && <DocumentCapture onSaved={onClose} isHealth={healthMode} />}
         {tab === "medication" && <MedicationCapture onSaved={onClose} />}
+        {tab === "expense" && <ExpenseCapture onSaved={onClose} />}
         {tab === "link" && <LinkCapture onSaved={onClose} />}
       </div>
     </div>
