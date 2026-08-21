@@ -2,6 +2,25 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Richiesta posizione ad ogni apertura dell'app
+Segnalato dall'utente: "ogni volta che apro l'app mi chiede sempre se
+voglio condividere la posizione". Causa: `useLocationCheckin.ts` (montato
+in `src/app/(app)/layout.tsx`, quindi ad ogni navigazione dentro l'app)
+usava `sessionStorage` per non richiedere la posizione più di una volta a
+sessione. Su iOS, un'app aggiunta alla Home è però una nuova sessione
+della WebView ad ogni lancio — `sessionStorage` si azzera insieme ad
+essa, quindi il check-in (e il relativo prompt) ripartiva da zero ogni
+volta che l'utente apriva l'app dall'icona.
+
+Fix: passato a `localStorage` con un cooldown esplicito di 6 ore (invece
+di "una volta a sessione"), e il tentativo viene segnato sia in caso di
+concessione che di rifiuto del permesso, per non rincorrere subito un
+utente che ha appena detto no. Non è una soluzione completa: se iOS
+stesso non ricorda il permesso già concesso tra un lancio e l'altro
+dell'app installata (limite noto e documentato delle PWA "Aggiungi a
+Home" su WebKit, fuori dal nostro controllo), il prompt di sistema può
+ricomparire comunque — ma non più ad ogni apertura, al massimo ogni 6 ore.
+
 ## [FATTO 2026-08-21] Logo scelto: "Orbita nel Monogramma", icone rigenerate
 Dopo l'artifact con le quattro proposte (Orbita, Eco, Scia, Monogramma) e su
 richiesta dell'utente ("prova a mixarli"), sono stati proposti due mix.
