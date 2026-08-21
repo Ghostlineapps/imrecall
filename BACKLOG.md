@@ -2,6 +2,37 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Nei paraggi: link al sito del locale
+Richiesta utente: "quando suggerisci posti in base alle preferenze, i posti
+suggeriti dovrebbero avere la possibilità di essere cliccato per vederne il
+sito web [...] ovviamente se hanno un sito".
+
+- `src/app/api/places/nearby/route.ts`: i tag OSM `website`/
+  `contact:website` sono già presenti in `el.tags` (la query Overpass usa
+  `out center`, verbosità default "body" = tag completi — stessa ragione
+  per cui `category` funziona già oggi), quindi non serve toccare la query,
+  solo leggerli. Aggiunta `normalizeWebsite()`: prende il primo valore se
+  ce ne sono più d'uno separati da `;` (capita per locali con più sedi/
+  social) e forza lo schema a `https://` se mancante (spesso mappato come
+  "www.locale.it" senza protocollo) — così il frontend può usare il campo
+  come `href` diretto. Nuovo campo `website: string | null` in ogni
+  elemento di `recommendations`.
+- `src/components/home/NearbyForYou.tsx`: ogni card ora è un `<a
+  target="_blank" rel="noopener noreferrer">` verso `r.website` quando
+  presente (icona `ExternalLink` a indicarlo), altrimenti resta un `<div>`
+  non cliccabile — niente link vuoti per i locali senza sito mappato su
+  OSM, come richiesto esplicitamente.
+
+Pubblicato in 2 commit separati (workflow di upload via GitHub web).
+Non verificato con `tsc` in locale (npm install bloccato dal registro in
+questa sessione, come da nota tecnica in fondo al file) — solo revisione
+manuale del codice, confermata dalla build "Ready" su Vercel in
+produzione (nessun errore TypeScript emerso in fase di build). Non
+ancora testato dal vivo con un locale reale che abbia un sito mappato su
+OSM: da controllare copertura reale del tag `website` (probabilmente
+parziale, come già per i tag `diet:*`) e comportamento su locali con
+sito ma senza schema/con più valori.
+
 ## [FATTO 2026-08-21] Richiesta posizione ad ogni apertura dell'app
 Segnalato dall'utente: "ogni volta che apro l'app mi chiede sempre se
 voglio condividere la posizione". Causa: `useLocationCheckin.ts` (montato
