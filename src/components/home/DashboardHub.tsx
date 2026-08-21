@@ -2,21 +2,23 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock, MessageCircle, CalendarDays, CalendarClock, Settings, Plus, HeartPulse } from "lucide-react";
+import { Clock, MessageCircle, CalendarDays, CalendarClock, Settings, Plus, HeartPulse, Receipt } from "lucide-react";
 import { CaptureSheet } from "@/components/capture/CaptureSheet";
 
-// 6 destinazioni oltre a Dashboard: la barra in basso è stata ridotta a
+// 7 destinazioni oltre a Dashboard: la barra in basso è stata ridotta a
 // Dashboard + Istruzioni proprio perché duplicava questo cerchio senza
-// motivo (vedi BottomNav.tsx). "Salute" non introduce una nuova
-// categorizzazione — è solo un punto d'ingresso visibile per far capire
-// che si possono caricare referti/esami come foto o file (vedi /health e
-// migrazione 020): senza questo bottone, nessuno penserebbe di farlo.
+// motivo (vedi BottomNav.tsx). "Salute" e "Spese" non introducono una nuova
+// categorizzazione — sono solo punti d'ingresso visibili per far capire che
+// si possono caricare referti/esami (vedi /health, migrazione 020) o
+// scontrini (vedi /expenses, migrazione 022): senza questi bottoni, nessuno
+// penserebbe di farlo.
 const ITEMS = [
   { href: "/timeline", label: "Ricordi", icon: Clock },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/appointments", label: "Calendario", icon: CalendarDays },
   { href: "/deadlines", label: "Scadenze", icon: CalendarClock },
   { href: "/health", label: "Salute", icon: HeartPulse },
+  { href: "/expenses", label: "Spese", icon: Receipt },
   { href: "/settings", label: "Profilo", icon: Settings },
 ];
 
