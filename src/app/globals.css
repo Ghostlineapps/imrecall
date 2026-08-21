@@ -25,6 +25,14 @@
     @apply bg-surface rounded-card border border-white/5 p-4;
   }
 
+  /* Variante chiara di .card per le schermate già passate alla palette
+     celeste (per ora solo la Dashboard — vedi redesign 2026-08-21). Una
+     classe a sé invece di riusare .card evita di dover toccare ogni pagina
+     ancora sul tema scuro quando il resto dell'app verrà convertito. */
+  .card-light {
+    @apply bg-white rounded-2xl border border-celeste-navy/5 p-4 shadow-sm shadow-celeste-navy/5;
+  }
+
   .btn-primary {
     @apply bg-primary hover:bg-primary-dark text-white font-medium rounded-full px-5 py-2.5 transition-colors disabled:opacity-40 disabled:pointer-events-none;
   }
