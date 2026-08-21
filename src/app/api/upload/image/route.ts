@@ -72,8 +72,17 @@ fine una riga nel formato:
 APPOINTMENT_DETECTED: {"title": "...", "appointment_at": "YYYY-MM-DDTHH:MM", "location": "..."}
 (usa null per "location" se non è indicata; se manca l'ora, usa "09:00")
 
-Puoi omettere entrambe le righe se non pertinenti, oppure includerle entrambe
-se l'immagine contiene sia una scadenza che un appuntamento.`;
+Se l'immagine è uno scontrino o una ricevuta di acquisto (supermercato,
+ristorante, benzina, farmacia, negozio...), aggiungi alla fine una riga nel
+formato:
+RECEIPT_DETECTED: {"vendor": "...", "amount": 12.50, "expense_date": "YYYY-MM-DD", "category": "spesa|trasporti|ristorazione|casa|salute|svago|altro"}
+"amount" è il TOTALE pagato (l'importo finale, non un singolo articolo).
+Usa "expense_date" la data dello scontrino se leggibile, altrimenti oggi.
+Scegli la categoria più adatta tra quelle elencate; se nessuna calza bene usa
+"altro". Se l'immagine non è uno scontrino/ricevuta, ometti del tutto la riga.
+
+Puoi omettere tutte le righe se non pertinenti, oppure includerne più di una
+se l'immagine contiene più elementi rilevabili contemporaneamente.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -97,6 +106,9 @@ export async function POST(req: NextRequest) {
   // Vedi migrazione 020 / CaptureSheet healthMode: la sezione Salute manda
   // esplicitamente "true" quando l'utente carica un referto da lì.
   const isHealth = formData.get("is_health") === "true";
+  // Vedi migrazione 022 / CaptureSheet expenseMode: la sezione Spese manda
+  // esplicitamente "true" quando l'utente carica uno scontrino da lì.
+  const isExpense = formData.get("is_expense") === "true";
 
   if (file.size > 10 * 1024 * 1024) {
     return NextResponse.json({ error: "file_too_large", max_mb: 10 }, { status: 413 });
@@ -130,9 +142,11 @@ export async function POST(req: NextRequest) {
   const rawText = visionRes.choices[0].message.content ?? "";
   const deadlineMatch = rawText.match(/DEADLINE_DETECTED:\s*(\{.*\})/);
   const appointmentMatch = rawText.match(/APPOINTMENT_DETECTED:\s*(\{.*\})/);
+  const receiptMatch = rawText.match(/RECEIPT_DETECTED:\s*(\{.*\})/);
   const description = rawText
     .replace(/DEADLINE_DETECTED:\s*\{.*\}/, "")
     .replace(/APPOINTMENT_DETECTED:\s*\{.*\}/, "")
+    .replace(/RECEIPT_DETECTED:\s*\{.*\}/, "")
     .trim();
 
   const { data: memory, error } = await supabase
@@ -147,6 +161,7 @@ export async function POST(req: NextRequest) {
       media_size: buffer.length,
       memory_date: new Date().toISOString(),
       is_health: isHealth,
+      is_expense: isExpense,
     })
     .select()
     .single();
@@ -158,7 +173,7 @@ export async function POST(req: NextRequest) {
   // "detected") così il client può mostrare subito una conferma invece di
   // chiudere in silenzio, lasciando l'utente col dubbio che non sia
   // successo nulla.
-  let detected: { type: "deadline" | "appointment"; title: string } | null = null;
+  let detected: { type: "deadline" | "appointment" | "expense"; title: string } | null = null;
 
   // Se Vision ha rilevato una scadenza nel documento, la crea automaticamente
   // (cattura intelligente da foto — vedi discussione sulle scadenze)
@@ -208,6 +223,46 @@ export async function POST(req: NextRequest) {
       console.error("Parsing APPOINTMENT_DETECTED fallito", err, appointmentMatch[1]);
       // parsing fallito: la memoria resta comunque salvata, l'utente può
       // creare l'appuntamento manualmente
+    }
+  }
+
+  // Se Vision ha rilevato uno scontrino/ricevuta, crea la spesa
+  // automaticamente — indipendentemente da dove è stata caricata la foto
+  // (come per scadenze e appuntamenti), non solo dalla sezione Spese. Se la
+  // lettura è imprecisa, l'utente la corregge da /expenses (PATCH
+  // /api/expenses/[id]) invece di dover ricaricare la foto.
+  if (receiptMatch) {
+    try {
+      const parsed = JSON.parse(receiptMatch[1]);
+      const amount = Number(parsed?.amount);
+      const validDate = typeof parsed?.expense_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.expense_date);
+      const CATEGORIES = ["spesa", "trasporti", "ristorazione", "casa", "salute", "svago", "altro"];
+      const category = CATEGORIES.includes(parsed?.category) ? parsed.category : "altro";
+
+      if (Number.isFinite(amount) && amount > 0) {
+        await supabase.from("expenses").insert({
+          user_id: user.id,
+          memory_id: memory.id,
+          vendor: typeof parsed?.vendor === "string" ? parsed.vendor.slice(0, 200) : null,
+          amount,
+          category,
+          expense_date: validDate ? parsed.expense_date : new Date().toISOString().slice(0, 10),
+          source: "photo",
+        });
+        detected = { type: "expense", title: parsed?.vendor ? `${parsed.vendor} · €${amount.toFixed(2)}` : `€${amount.toFixed(2)}` };
+
+        // La foto è confermata uno scontrino anche se non era stata caricata
+        // dalla sezione Spese (es. dalla barra di cattura generica).
+        if (!isExpense) {
+          await supabase.from("memories").update({ is_expense: true }).eq("id", memory.id);
+        }
+      } else {
+        console.error("RECEIPT_DETECTED con importo non valido", parsed);
+      }
+    } catch (err) {
+      console.error("Parsing RECEIPT_DETECTED fallito", err, receiptMatch[1]);
+      // parsing fallito: la memoria resta comunque salvata, l'utente può
+      // aggiungere la spesa manualmente dalla sezione Spese
     }
   }
 
