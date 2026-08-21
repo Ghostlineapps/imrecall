@@ -2,6 +2,51 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Redesign Dashboard: benvenuto, profondità, coerenza cromatica
+Richiesta dell'utente: "la pagina è totalmente piatta, troppo anonima e
+senza identità". Il problema reale, visibile aprendo la Dashboard: il
+redesign celeste del 19/08 aveva rifatto solo l'intestazione e il cerchio,
+lasciando le card sotto (Oggi, Farmaci, Nei paraggi, Spostamenti) sul vecchio
+tema scuro — due linguaggi visivi incollati, non un errore di stile ma di
+coerenza. Confermato con l'utente lo scope prima di partire (via
+AskUserQuestion): si parte dalla sola Dashboard, si estende al resto
+dell'app solo se il risultato convince.
+
+- **Blocco di benvenuto**: le due righe piatte "Ciao / Dashboard" diventano
+  un blocco a piena larghezza con la palette del brand (sfumatura
+  celeste-accent → celeste-accentDark), due bagliori sfocati per dare
+  profondità invece di un colore piatto, saluto legato all'ora del giorno
+  (Buongiorno/Buon pomeriggio/Buonasera + nome) e la tagline del prodotto
+  ("La tua memoria, sempre con te"). La ricerca ora galleggia dentro questo
+  blocco invece che sotto, su sfondo piatto.
+- **Coerenza cromatica**: le quattro card sotto il cerchio (TodayCard,
+  MedicationsTodayCard, NearbyForYou, LocationStatusCard) sono passate dalla
+  `.card` scura condivisa con il resto dell'app a una nuova `.card-light`
+  (in globals.css) pensata per le schermate già in palette celeste — testo,
+  bordi e icone ricoloriti di conseguenza. `.card` originale intoccata:
+  tutte le altre schermate (ancora scure) non sono state toccate.
+- **Profondità nel cerchio**: bagliore sfumato dietro al cerchio dei
+  pulsanti (prima "galleggiava" su sfondo piatto), gradiente vero sui
+  pulsanti (prima quasi invisibile, stesso colore a due opacità), micro
+  interazione hover/tap.
+- **Pulsante di cattura duplicato**: scoperto in corso d'opera — il
+  pulsante fluttuante "+" (presente su ogni schermata) e il "+" al centro
+  del cerchio facevano *la stessa identica azione* a pochi centimetri di
+  distanza sulla Dashboard, uno dei motivi per cui la pagina sembrava
+  confusa. Il pulsante fluttuante ora si nasconde solo su `/home`, dov'è
+  ridondante; resta invariato su tutte le altre schermate.
+- StreakBadge (il badge fiamma dello streak) ridisegnato per stare sul
+  nuovo sfondo sfumato invece che su sfondo chiaro/bianco (bianco
+  traslucido invece di `bg-warn/10`, altrimenti sarebbe sparito).
+
+Verificato dal vivo in produzione (screenshot prima/dopo): intestazione,
+ricerca, cerchio e tutte e quattro le card sotto ora nella stessa palette
+chiara, nessun più salto visivo scendendo lungo la pagina. Il resto
+dell'app (Chat, Ricordi, Calendario, Scadenze, Spese, Salute, dettaglio
+ricordo) resta deliberatamente sul tema scuro per ora — l'estensione è
+già discussa con l'utente come possibile prossimo passo, non ancora
+decisa.
+
 ## [FATTO 2026-08-21] Esportazione nota spese in PDF, con foto degli scontrini
 Richiesta dell'utente subito dopo la sezione Spese: poter esportare tutto su
 un "foglio Excel" da stampare/condividere/scaricare, foto degli scontrini
