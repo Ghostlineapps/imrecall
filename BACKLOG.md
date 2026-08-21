@@ -2,6 +2,30 @@
 
 Aggiornato: 2026-08-21
 
+## [FATTO 2026-08-21] Icona home-screen iOS: da placeholder generico a icona vera
+L'utente ha segnalato "manca un logo identificativo", e ha poi mandato uno
+screenshot della propria home iPhone: l'icona IMRECALL non era nemmeno il
+vecchio monogramma "IM" presente in `public/icon-512.png` — era una "I"
+bianca semplice su nero, identica al placeholder che iOS genera da solo
+quando non trova un'icona dedicata (stesso pattern delle altre app senza
+icona nello screenshot).
+
+Causa: `src/app/layout.tsx` non aveva mai avuto un campo `metadata.icons`.
+`public/manifest.json` aveva già le icone corrette per Android/Chrome, ma
+iOS Safari non le legge da lì per "Aggiungi a Home" — gli serve un
+`<link rel="apple-touch-icon">` esplicito, che solo `metadata.icons` genera
+in Next.js. Aggiunto il campo, puntato alle icone esistenti
+(`icon-192.png`, `icon-512.png`).
+
+Questo fix collega correttamente il meccanismo, ma **non cambia da solo**
+la scorciatoia già presente sul telefono dell'utente (va rimossa e
+riaggiunta per vedere l'effetto), e le icone PNG a cui punta sono ancora
+quelle vecchie (cerchio indaco, tema scuro) — da sostituire una volta
+scelta la direzione del nuovo logo (vedi sezione "Logo" più sotto/artifact
+condiviso con l'utente: Orbita, Eco, Scia, Monogramma). Una volta scelto,
+serve anche aggiornare `background_color`/`theme_color` in
+`manifest.json`, ancora `#0F0F11` (vecchio tema scuro).
+
 ## [FATTO 2026-08-21] Redesign Dashboard: benvenuto, profondità, coerenza cromatica
 Richiesta dell'utente: "la pagina è totalmente piatta, troppo anonima e
 senza identità". Il problema reale, visibile aprendo la Dashboard: il
