@@ -1,6 +1,40 @@
 # IMRECALL — backlog (idee/fix rimandati, non ancora implementati)
 
-Aggiornato: 2026-08-20
+Aggiornato: 2026-08-21
+
+## [FATTO 2026-08-21] Sezione Spese: nota spese da scontrini + budget mensile
+Richiesta dell'utente ("andiamo avanti con budget e nota spese?"), già
+annunciata come "prossimamente" nel post Instagram del 20/08. Stesso schema
+architetturale della sezione Salute (migrazione 020): nuovo pulsante
+dedicato sul cerchio della Dashboard, non una nuova categorizzazione dei
+ricordi.
+
+**Nota spese**: nuova tabella `expenses` (migrazione 022) con importo,
+negozio, categoria e data. Due modi per aggiungere una spesa:
+- Foto dello scontrino: la stessa Vision già usata per scadenze e
+  appuntamenti (`/api/upload/image`) ora riconosce anche gli scontrini
+  (`RECEIPT_DETECTED`) e crea la spesa in automatico — funziona da
+  qualunque foto caricata, non solo dalla sezione Spese, come già succede
+  per scadenze/appuntamenti. L'utente aveva chiesto esplicitamente
+  "esecuzione automatica con possibilità di modifica in caso di errata
+  lettura": ogni spesa (letta da foto o inserita a mano) si tocca dalla
+  lista per aprire una scheda di modifica (negozio, importo, categoria,
+  data) o eliminarla.
+- Inserimento manuale: nuovo tab "Spesa" nella cattura, per chi non ha lo
+  scontrino a portata di mano.
+
+**Budget**: un limite mensile totale opzionale (colonna `monthly_budget` su
+`profiles`), impostabile dalla sezione Spese. Barra di avanzamento con
+avviso quando ci si avvicina (≥80%) o si supera (100%) la soglia. Scelto un
+budget totale singolo e non per categoria per restare semplice in questa
+prima versione — nessuna richiesta esplicita dell'utente su questo punto,
+scelta fatta per bilanciare completezza e tempo di implementazione.
+
+Verificato end-to-end in produzione: creata una spesa di test a mano,
+verificato il totale mensile e la barra budget (incluso lo stato "superato"
+con soglia bassa apposta), corretta e infine cancellata dalla scheda di
+modifica — tutto tramite l'app live, non solo query dirette sul database.
+Verificato anche il nuovo pulsante "Spese" sul cerchio della Dashboard.
 
 ## [FATTO 2026-08-20] Cancellare un farmaco (via ricordo) ora ferma davvero le notifiche
 Bug segnalato dall'utente: aveva ricancellato dei farmaci già presenti,
