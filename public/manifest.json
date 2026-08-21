@@ -4,8 +4,8 @@
   "description": "La tua memoria, sempre con te.",
   "start_url": "/home",
   "display": "standalone",
-  "background_color": "#0F0F11",
-  "theme_color": "#0F0F11",
+  "background_color": "#EAF2F8",
+  "theme_color": "#375F7D",
   "orientation": "portrait",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
