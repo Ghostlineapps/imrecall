@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { Plus, Receipt, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Receipt, Pencil, Trash2, X, FileDown } from "lucide-react";
 import clsx from "clsx";
 import { CaptureSheet } from "@/components/capture/CaptureSheet";
+import { ExpensesExportSheet } from "@/components/expenses/ExpensesExportSheet";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -38,6 +39,7 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<any | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const { data, isLoading, mutate } = useSWR("/api/expenses", fetcher);
 
   const expenses: any[] = data?.expenses ?? [];
@@ -138,10 +140,19 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <button onClick={() => setSheetOpen(true)} className="btn-primary w-full flex items-center justify-center gap-2">
-        <Plus size={18} />
-        Aggiungi spesa
-      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={() => setSheetOpen(true)} className="btn-primary flex-1 flex items-center justify-center gap-2">
+          <Plus size={18} />
+          Aggiungi spesa
+        </button>
+        <button
+          onClick={() => setExportOpen(true)}
+          className="btn-ghost px-4 flex items-center justify-center gap-2"
+          aria-label="Esporta nota spese"
+        >
+          <FileDown size={18} />
+        </button>
+      </div>
 
       {isLoading && (
         <div className="space-y-2">
@@ -188,6 +199,8 @@ export default function ExpensesPage() {
           onDelete={() => deleteExpense(editing.id)}
         />
       )}
+
+      {exportOpen && <ExpensesExportSheet onClose={() => setExportOpen(false)} />}
     </div>
   );
 }
