@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { MapPin, Compass } from "lucide-react";
+import { MapPin, Compass, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -93,16 +93,32 @@ export function NearbyForYou() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-        {recommendations.map((r: any) => (
-          <div key={r.id} className="card-light min-w-[160px] space-y-1 shrink-0">
-            <div className="flex items-center gap-1.5 text-celeste-accentDark text-xs">
-              <MapPin size={12} />
-              <span>{labelFor(r.category)}</span>
-            </div>
-            <p className="text-sm font-medium leading-snug text-celeste-navy">{r.name}</p>
-            <p className="text-xs text-celeste-muted">{r.distance_km} km</p>
-          </div>
-        ))}
+        {recommendations.map((r: any) => {
+          // Cliccabile solo se il locale ha un sito mappato su OSM
+          // (richiesta esplicita: "ovviamente se hanno un sito") — senza
+          // sito resta una card informativa, non un link vuoto/rotto.
+          const Tag: "a" | "div" = r.website ? "a" : "div";
+          const linkProps = r.website
+            ? { href: r.website, target: "_blank", rel: "noopener noreferrer" }
+            : {};
+          return (
+            <Tag
+              key={r.id}
+              {...linkProps}
+              className="card-light min-w-[160px] space-y-1 shrink-0 block active:opacity-80"
+            >
+              <div className="flex items-center justify-between gap-2 text-celeste-accentDark text-xs">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <MapPin size={12} className="shrink-0" />
+                  <span className="truncate">{labelFor(r.category)}</span>
+                </span>
+                {r.website && <ExternalLink size={12} className="shrink-0" />}
+              </div>
+              <p className="text-sm font-medium leading-snug text-celeste-navy">{r.name}</p>
+              <p className="text-xs text-celeste-muted">{r.distance_km} km</p>
+            </Tag>
+          );
+        })}
       </div>
     </div>
   );
