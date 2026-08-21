@@ -16,8 +16,9 @@ export const metadata: Metadata = {
   // alcun design vista sul telefono (screenshot utente, 21/08). Il
   // manifest.json aveva già le icone corrette per Android/Chrome, ma iOS
   // non le legge da lì: gli serve un <link rel="apple-touch-icon"> esplicito,
-  // che solo `metadata.icons` genera. Punta ancora alle icone vecchie
-  // (cerchio indaco) finché non scegliamo il nuovo logo — vedi BACKLOG.md.
+  // che solo `metadata.icons` genera. icon-192/512.png ora contengono il
+  // logo scelto (mix "Orbita nel Monogramma": il cerchio con il puntino
+  // della Dashboard dentro la piastrella sfumata) — vedi BACKLOG.md.
   icons: {
     icon: [
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
@@ -28,7 +29,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0F0F11",
+  // Allineato alla nuova icona/palette celeste (vedi metadata.icons sopra):
+  // prima era #0F0F11, il nero del vecchio tema, e colorava la barra di
+  // stato/status bar di iOS in modo incoerente col resto.
+  themeColor: "#375F7D",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
