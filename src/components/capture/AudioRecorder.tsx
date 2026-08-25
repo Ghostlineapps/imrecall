@@ -14,7 +14,9 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
 
   async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+    // Bitrate basso ma ok per il parlato: tiene il file sotto il limite di
+    // 25MB di Whisper anche per registrazioni lunghe (vedi audio/route.ts).
+    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32000 });
     chunksRef.current = [];
 
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
