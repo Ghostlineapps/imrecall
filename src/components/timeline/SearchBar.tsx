@@ -31,16 +31,19 @@ export function SearchBar({
   }
 
   return (
-    <form onSubmit={submit} className="input-field flex items-center gap-2">
-      <Search size={16} className="text-white/30 shrink-0" />
+    // Stessa forma (bianca, pillola, ombra morbida) della barra di ricerca
+    // in Dashboard — vedi DashboardSearchBar.tsx — per coerenza tra i due
+    // punti d'ingresso alla stessa ricerca semantica.
+    <form onSubmit={submit} className="flex items-center gap-2 bg-white rounded-full px-4 py-3 shadow-sm shadow-celeste-navy/10">
+      <Search size={16} className="text-celeste-muted shrink-0" />
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder='Cerca nei ricordi… es. "viaggio in Cina"'
-        className="bg-transparent outline-none flex-1 text-sm placeholder:text-white/30"
+        className="bg-transparent outline-none flex-1 text-sm text-celeste-navy placeholder:text-celeste-muted"
       />
       {value && (
-        <button type="button" onClick={clear} className="text-white/30 shrink-0">
+        <button type="button" onClick={clear} className="text-celeste-muted shrink-0">
           <X size={16} />
         </button>
       )}
