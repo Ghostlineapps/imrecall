@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classification";
+import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -89,6 +90,19 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
+  // tipi (testo, link, audio, foto, documento, riunione) — vedi
+  // src/lib/subscription/limits.ts.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("subscription_tier")
+    .eq("id", user.id)
+    .single();
+
+  if (await isMemoryQuotaExceeded(supabase, user.id, profile?.subscription_tier)) {
+    return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
+  }
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
