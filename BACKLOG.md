@@ -2,6 +2,44 @@
 
 Aggiornato: 2026-08-25
 
+## [FATTO 2026-08-25] Feedback utile/non utile su "Just Became Relevant"
+Nota di correzione: durante la conversazione avevo proposto di "prototipare"
+Just Became Relevant come se fosse una feature nuova della visione ImRecall
+2.0 — controllando il codice è emerso che esiste già in produzione (vedi
+`TodayCard.tsx`, `/api/insights/today`, `/api/checkin`, tabella
+`resurface_candidates`, 6 tipi di segnale: proximity/on_this_day/deadline/
+pre_trip/people/manual_recall). Non prototipato da zero, quindi: aggiunto
+solo il pezzo verificato mancante — nessun modo per l'utente di segnalare
+se una card mostrata era utile.
+
+Implementato:
+- Migrazione 023: nuova colonna `feedback` (text, check 'useful'/
+  'not_useful') su `resurface_candidates`. La colonna `dismissed` esisteva
+  già in schema ma non era mai stata collegata a un controllo UI.
+- Nuovo endpoint `PATCH /api/insights/[id]/feedback`: aggiorna `feedback` e,
+  se "non utile", anche `dismissed` (coerenza semantica, anche se la card
+  non verrebbe comunque ripescata — è già `sent`).
+- `TodayCard.tsx`: due pulsanti (👍 Utile / 👎 Non utile) sotto la card,
+  fuori dal `<Link>` di navigazione per non annidare elementi interattivi.
+  Aggiornamento ottimistico, poi messaggio di conferma breve.
+
+Non collegato ancora a nessuna logica di scoring: `priority_score` resta
+la regola fissa per tipo di oggi. Questo è solo il primo passo — raccogliere
+il segnale — prima di eventualmente usarlo per pesare i candidati futuri.
+
+**Richiede un'azione manuale dell'utente**: la migrazione 023 non è stata
+applicata al database di produzione (questa sessione non ha accesso diretto
+a Supabase) — va eseguita una volta nell'SQL Editor di Supabase:
+```sql
+alter table resurface_candidates
+  add column feedback text check (feedback in ('useful', 'not_useful'));
+```
+Finché non viene eseguita, i pulsanti compaiono ma la PATCH risponde 500
+(colonna inesistente) — il codice non controlla `response.ok`, quindi
+fallisce in silenzio: il messaggio di conferma appare comunque (aggiornamento
+ottimistico) ma il feedback non viene salvato davvero. Non ancora testato
+dal vivo con un candidato reale, né prima né dopo la migrazione.
+
 ## [FATTO 2026-08-25] Avviso quando le notifiche push sono disattivate (bug farmaci)
 Bug report utente: "Stamattina la notifica del farmaco non è arrivata." Causa,
 confermata dall'utente: le notifiche push erano disattivate (interruttore
