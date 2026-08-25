@@ -49,6 +49,13 @@ export default function SettingsPage() {
         <p className="text-xs text-white/40 mt-1">Promemoria scadenze via email e push</p>
       </Link>
 
+      <Link href="/settings/integrations" className="card block">
+        <p className="font-medium">Integrazioni</p>
+        <p className="text-xs text-white/40 mt-1">
+          Collega Gmail per rilevare automaticamente appuntamenti dalle email
+        </p>
+      </Link>
+
       <button onClick={handleLogout} className="btn-ghost text-sm">
         Esci
       </button>
