@@ -3,7 +3,12 @@ import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { extractDocumentText } from "@/lib/documents/extractText";
-import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
+import {
+  FREE_DOCUMENTS_PER_MONTH,
+  FREE_MEMORIES_PER_MONTH,
+  isDocumentQuotaExceeded,
+  isMemoryQuotaExceeded,
+} from "@/lib/subscription/limits";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -103,6 +108,14 @@ export async function POST(req: NextRequest) {
 
   if (await isMemoryQuotaExceeded(supabase, user.id, profile?.subscription_tier)) {
     return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
+  }
+
+  // Sotto-quota specifica per i documenti (5/mese Free) — vedi
+  // src/lib/subscription/limits.ts. Come il resto dei limiti di piano, resta
+  // disattivata finché SUBSCRIPTION_LIMITS_ENABLED non è impostato: l'app è
+  // ancora in fase di test con pochi utenti.
+  if (await isDocumentQuotaExceeded(supabase, user.id, profile?.subscription_tier)) {
+    return NextResponse.json({ error: "document_limit_reached", limit: FREE_DOCUMENTS_PER_MONTH }, { status: 402 });
   }
 
   const formData = await req.formData();
