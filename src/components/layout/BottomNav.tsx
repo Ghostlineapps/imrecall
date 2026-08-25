@@ -20,7 +20,10 @@ export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur border-t border-white/10 flex justify-around py-2 px-2 z-20">
+    // Palette celeste (redesign 2026-08-21/25): prima restava sul tema
+    // scuro anche sulle schermate già convertite (es. Dashboard), unica
+    // parte visibilmente fuori posto perché fissa su ogni pagina.
+    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-celeste-navy/10 flex justify-around py-2 px-2 z-20 shadow-[0_-4px_20px_-8px_rgba(34,56,74,0.12)]">
       {ITEMS.map(({ href, label, icon: Icon }) => {
         const active = pathname.startsWith(href);
         return (
@@ -29,7 +32,7 @@ export function BottomNav() {
             href={href}
             className={clsx(
               "flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-colors text-xs",
-              active ? "text-primary-light" : "text-white/40 hover:text-white/70"
+              active ? "text-celeste-accentDark" : "text-celeste-muted hover:text-celeste-navy"
             )}
           >
             <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
