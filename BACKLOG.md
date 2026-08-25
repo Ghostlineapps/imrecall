@@ -878,37 +878,20 @@ palestre" appare in automatico. Pubblicato e deployato in produzione.
 - Integrazioni con altre app (punto di partenza realistico: Google
   Calendar/Gmail).
 
-## Nuova feature grossa: Nota spese / rimborsi (idea utente, non scoping definitivo)
-Non un semplice budget di viaggio: un vero modulo nota spese, utile anche a
-chi deve rendicontare spese per un rimborso (lavoro, trasferte). Fotografi
-lo scontrino/fattura e:
-- l'importo viene estratto automaticamente (serve un 3° tipo di rilevamento
-  Vision oltre a DEADLINE_DETECTED/APPOINTMENT_DETECTED, es. EXPENSE_DETECTED
-  con importo, valuta, esercente, data) e sommato in tempo reale al totale
-  del foglio/budget di riferimento;
-- possibilità di impostare un budget totale (es. 3.000€) e vedere quanto
-  resta man mano che si fotografano gli scontrini;
-- importi ed esercente devono essere MODIFICABILI a mano (gli scontrini
-  spesso sono poco leggibili, l'OCR non è affidabile al 100%);
-- output: un "modellino" di nota spese compilato, con elenco importi +
-  immagini degli scontrini allegate — probabile export come PDF o Excel;
-- le foto degli scontrini scattate dall'app dovrebbero poter essere salvate
-  anche nel rullino, organizzate in una cartella per mese di riferimento.
+## [SUPERATO] Nota spese / rimborsi
+Questa voce descriveva un'idea non ancora scopata: nel frattempo la feature
+è stata costruita e pubblicata per intero il 21/08 (vedi sopra "[FATTO
+2026-08-21] Sezione Spese: nota spese da scontrini + budget mensile" e
+"[FATTO 2026-08-21] Esportazione nota spese in PDF, con foto degli
+scontrini"). Lasciata qui solo la parte NON coperta da quei due fix:
 
-Nota tecnica importante sull'ultimo punto: un'app web (PWA, come IMRECALL
-oggi) NON può creare album/cartelle nel rullino del telefono in automatico
-— è un limite di piattaforma (iOS/Android), non risolvibile lato codice.
-Può solo aprire il foglio di condivisione nativo per salvare una foto alla
-volta (un tap in più, vedi idea "salva anche nel rullino" già discussa).
-L'organizzazione automatica per mese richiederebbe un'app nativa vera
-(altro motivo per cui pubblicare su store, in futuro, avrebbe senso). Da
-notare comunque che l'app Foto di iOS raggruppa già le foto per mese/anno
-di scatto di suo, senza bisogno di cartelle create da un'app terza.
-
-Scope stimato: DB nuovo (tabella spese/fogli spesa), estensione del prompt
-Vision, UI di modifica manuale, generazione documento esportabile. È un
-pezzo di lavoro vero, non una modifica veloce — da scopare per bene quando
-si decide di affrontarla, non in coda al polish del prodotto core.
+- Le foto degli scontrini scattate dall'app non possono essere salvate
+  automaticamente nel rullino in una cartella per mese — limite di
+  piattaforma per una PWA (non risolvibile lato codice, richiederebbe
+  un'app nativa vera). Resta un'idea futura, non uno scoping pronto.
+- Budget per categoria (oggi è un unico budget mensile totale, scelta
+  deliberata per restare semplici nella prima versione) — possibile
+  estensione futura se richiesta.
 
 ## [FATTO 2026-08-19] Bug chat scoperti da test reale
 Testando "mi ricordi la scheda della palestra?" sono emersi due bug veri:
