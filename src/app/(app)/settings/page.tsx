@@ -26,9 +26,13 @@ export default function SettingsPage() {
         <p className="font-medium capitalize">{data?.subscription_tier ?? "free"}</p>
         {data?.subscription_tier === "free" && (
           <p className="text-xs text-white/40 mt-1">
-            {data?.memory_count_this_month ?? 0}/100 memorie questo mese
+            {data?.memory_count_this_month ?? 0}/{data?.memory_limit_this_month ?? 100} memorie questo mese
           </p>
         )}
+        <p className="text-xs text-white/40 mt-1">
+          {data?.transcription_minutes_this_month ?? 0}/{data?.transcription_minutes_limit ?? 60} min di
+          trascrizione questo mese (audio + riunioni)
+        </p>
       </div>
 
       <Link href="/settings/profile" className="card block">
