@@ -56,34 +56,36 @@ function TimelineContent() {
   }, {});
 
   return (
-    <div className="px-4 pt-6 space-y-5">
+    // Palette celeste (redesign 2026-08-21/25, terza schermata convertita
+    // dopo Dashboard e Calendario): stessa struttura di prima, solo colori.
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-5 text-celeste-navy">
       <h1 className="text-xl font-semibold">Ricordi</h1>
 
       <SearchBar onSearch={setSearchQuery} onClear={() => setSearchQuery(null)} initialValue={initialQuery} />
 
       {searchQuery ? (
         <div className="space-y-3">
-          <p className="text-xs text-white/40 uppercase tracking-wide">
+          <p className="text-xs text-celeste-muted uppercase tracking-wide">
             Risultati per &quot;{searchQuery}&quot;
           </p>
 
           {isSearching && (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="card h-16 animate-pulse bg-white/5" />
+                <div key={i} className="card-light h-16 animate-pulse bg-celeste-navy/5" />
               ))}
             </div>
           )}
 
           {!isSearching && searchResults.length === 0 && (
-            <p className="text-sm text-white/40 py-4 text-center">
+            <p className="text-sm text-celeste-muted py-4 text-center">
               Nessun ricordo trovato per questa ricerca.
             </p>
           )}
 
           <div className="space-y-2">
             {searchResults.map((m: any) => (
-              <MemoryCard key={m.id} memory={m} />
+              <MemoryCard key={m.id} memory={m} light />
             ))}
           </div>
         </div>
@@ -94,22 +96,22 @@ function TimelineContent() {
           {isLoading && memories.length === 0 && (
             <div className="space-y-2">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="card h-16 animate-pulse bg-white/5" />
+                <div key={i} className="card-light h-16 animate-pulse bg-celeste-navy/5" />
               ))}
             </div>
           )}
 
           {Object.entries(grouped).map(([day, items]) => (
             <div key={day} className="space-y-2">
-              <p className="text-xs text-white/40 uppercase tracking-wide">{day}</p>
+              <p className="text-xs text-celeste-muted uppercase tracking-wide">{day}</p>
               {items.map((m) => (
-                <MemoryCard key={m.id} memory={m} />
+                <MemoryCard key={m.id} memory={m} light />
               ))}
             </div>
           ))}
 
           {memories.length > 0 && memories.length % PAGE_SIZE === 0 && (
-            <button onClick={() => setSize(size + 1)} className="btn-ghost w-full text-center py-3 text-sm">
+            <button onClick={() => setSize(size + 1)} className="btn-ghost-light w-full text-center py-3 text-sm">
               Carica altri
             </button>
           )}
