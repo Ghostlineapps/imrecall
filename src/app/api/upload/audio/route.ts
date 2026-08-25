@@ -5,6 +5,23 @@ import { processMemory } from "@/lib/openai/classification";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Limite durata per tier: 30 min Free, 100 min Premium.
+// Nota: la premium era stata richiesta a 300 min, ma non è raggiungibile con
+// l'approccio attuale a singola chiamata Whisper — vedi MAX_FILE_BYTES sotto.
+const MAX_SECONDS_FREE = 1800; // 30 min
+const MAX_SECONDS_PREMIUM = 6000; // 100 min
+
+// Whisper accetta al massimo 25MB per file (stesso limite gestito in
+// /api/upload/meeting/route.ts). AudioRecorder.tsx forza lo stesso bitrate
+// basso già usato per le riunioni (32kbps, ok per il parlato) per restare
+// sotto soglia anche a 100 min (~24MB attesi, margine stretto ma voluto per
+// non sprecare durata utile) — a 300 min anche a 32kbps si sfonderebbe
+// abbondantemente il limite (~72MB), da qui il tetto più basso del
+// richiesto. Per arrivare davvero a 300 min servirebbe dividere la
+// registrazione in più segmenti trascritti separatamente (lavoro più
+// corposo, non ancora fatto).
+const MAX_FILE_BYTES = 24 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -16,20 +33,23 @@ export async function POST(req: NextRequest) {
 
   if (!file) return NextResponse.json({ error: "no_file" }, { status: 400 });
 
-  // Limite durata per tier: 5 min Free, 30 min Premium
   const { data: profile } = await supabase
     .from("profiles")
     .select("subscription_tier")
     .eq("id", user.id)
     .single();
 
-  const maxSeconds = profile?.subscription_tier === "free" ? 300 : 1800;
+  const maxSeconds = profile?.subscription_tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PREMIUM;
   if (duration > maxSeconds) {
     return NextResponse.json({ error: "duration_exceeded", max: maxSeconds }, { status: 402 });
   }
 
   const path = `${user.id}/${crypto.randomUUID()}.webm`;
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  if (buffer.length > MAX_FILE_BYTES) {
+    return NextResponse.json({ error: "file_too_large", max: MAX_FILE_BYTES }, { status: 402 });
+  }
 
   const { error: uploadError } = await supabase.storage
     .from("audio")
