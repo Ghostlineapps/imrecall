@@ -5,6 +5,7 @@ import { processMemory } from "@/lib/openai/classification";
 import {
   FREE_MEMORIES_PER_MONTH,
   isMemoryQuotaExceeded,
+  limitsEnabled,
   transcriptionMinutesQuota,
   transcriptionMinutesUsedThisMonth,
 } from "@/lib/subscription/limits";
@@ -206,7 +207,7 @@ export async function POST(req: NextRequest) {
   // ($0,006/min) — vedi src/lib/subscription/limits.ts e BACKLOG.md.
   const minutesUsed = await transcriptionMinutesUsedThisMonth(supabase, user.id);
   const minutesQuota = transcriptionMinutesQuota(tier);
-  if (minutesUsed + duration / 60 > minutesQuota) {
+  if (limitsEnabled() && minutesUsed + duration / 60 > minutesQuota) {
     return NextResponse.json(
       { error: "monthly_minutes_exceeded", max_minutes: minutesQuota, used_minutes: Math.round(minutesUsed) },
       { status: 402 }
