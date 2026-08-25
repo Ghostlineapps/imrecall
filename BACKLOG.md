@@ -86,6 +86,47 @@ Non implementato, richiede lavoro dell'utente prima che io possa procedere:
   supporto WebAuthn/passkey, non presente oggi — scope più ampio, da
   valutare come iniziativa a sé.
 
+## [FATTO 2026-08-25] Limiti durata audio: 30 min free, 100 min premium
+Richiesta utente: "le ore di registrazione free non sono 300 secondi... 30
+minuti free e 300 minuti per la premium".
+
+30 min free implementato come richiesto. 300 min premium **non è stato
+implementato così com'era richiesto**: Whisper accetta al massimo 25MB per
+file, e anche al bitrate più basso usabile per il parlato (32kbps, lo
+stesso già usato in `MeetingRecorder.tsx`) 300 minuti produrrebbero ~72MB,
+quindi il limite verrebbe sempre sforato. Tetto reale implementato: 100
+min premium (~24MB attesi, stesso margine di sicurezza già usato per le
+riunioni). Per arrivare davvero a 300 min servirebbe dividere la
+registrazione in più segmenti trascritti separatamente — non ancora fatto,
+da valutare se serve davvero prima di investirci.
+
+- `src/app/api/upload/audio/route.ts`: `MAX_SECONDS_FREE = 1800` (30 min),
+  `MAX_SECONDS_PREMIUM = 6000` (100 min), aggiunto anche un controllo
+  `MAX_FILE_BYTES` (24MB) come rete di sicurezza — prima non c'era nessun
+  controllo lato server sulla dimensione del file audio.
+- `src/components/capture/AudioRecorder.tsx`: il `MediaRecorder` ora forza
+  `audioBitsPerSecond: 32000`, come già faceva `MeetingRecorder.tsx` — senza
+  questo, registrazioni lunghe a bitrate di default avrebbero comunque
+  sforato il limite di Whisper indipendentemente dal tetto in secondi.
+
+## [DECISO 2026-08-25] Abbonamenti: modello a 2 livelli confermato
+Risposta dell'utente allo scoping (`scoping_abbonamenti.md`): "fare un
+abbonamento free e uno premium" — conferma il modello "a livelli" (coerente
+con l'enum già in schema) e restringe a 2 soli piani reali: `family` e
+`professional` restano placeholder nell'enum ma non pianificati.
+
+Nuova idea catturata, non ancora implementabile (nessuna infrastruttura di
+trial oggi): popup di upsell 3 giorni prima della fine dei 30 giorni di
+prova, con offerta "diventa premium adesso e risparmi il 30%". Da includere
+nello step 4/5 della sequenza proposta nello scoping doc, quando si
+costruirà `trial_ends_at` e il resto del flusso trial.
+
+Domanda dell'utente su Stripe + conto Hong Kong: risposta data in chat
+(Stripe supporta la registrazione da Hong Kong direttamente — HKID o, in
+alternativa, un Business Registration Number con account "Sole
+Proprietorship" per chi non ha HKID). Non ancora verificato con un
+commercialista/consulente — solo ricerca da fonti Stripe pubbliche.
+
 ## [FATTO 2026-08-21] Nei paraggi: link al sito del locale
 Richiesta utente: "quando suggerisci posti in base alle preferenze, i posti
 suggeriti dovrebbero avere la possibilità di essere cliccato per vederne il
