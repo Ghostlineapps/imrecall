@@ -1,6 +1,52 @@
 # IMRECALL — backlog (idee/fix rimandati, non ancora implementati)
 
-Aggiornato: 2026-08-21
+Aggiornato: 2026-08-25
+
+## [FATTO 2026-08-25] Avviso quando le notifiche push sono disattivate (bug farmaci)
+Bug report utente: "Stamattina la notifica del farmaco non è arrivata." Causa,
+confermata dall'utente: le notifiche push erano disattivate (interruttore
+globale in Impostazioni → Notifiche, condiviso da tutte le notifiche
+dell'app — non solo farmaci). Il sistema non segnalava mai da nessuna parte
+quando questo capitava: `sendPushToUser()` fallisce in silenzio se non c'è
+un abbonamento valido, e l'unico posto dove lo stato "attivo/disattivo" era
+visibile era la pagina Impostazioni → Notifiche stessa, che nessuno apre per
+caso.
+
+Fix: `src/components/home/MedicationsTodayCard.tsx` ora controlla lo stato
+dell'abbonamento push (`navigator.serviceWorker` + `PushManager` +
+`Notification.permission`) e, se ci sono farmaci in programma oggi ma le
+notifiche sono spente, mostra un avviso rosso cliccabile che porta dritto a
+Impostazioni → Notifiche — visibile dove l'utente vede davvero "i farmaci di
+oggi", non nascosto in un menu.
+
+Non risolto (root cause di perché si erano disattivate in origine): non
+confermato se disattivazione manuale dell'utente o revoca del permesso da
+parte del browser/iOS (es. dopo un reinstall della PWA, analogo al bug già
+risolto di `useLocationCheckin.ts` con sessionStorage). Se dovesse
+riaccadere senza un'azione esplicita dell'utente, vale la pena indagare
+quella pista.
+
+## [FATTO 2026-08-25] Registrazione: mostra/nascondi password + login Google
+Richiesta utente: ridurre il rischio di errori di digitazione della password
+in fase di registrazione da smartphone, valutando anche login social
+(Apple/Facebook) e autenticazione biometrica.
+
+Implementato subito (basso rischio, nessuna credenziale esterna richiesta):
+- `src/app/(auth)/login/page.tsx` e `src/app/(auth)/signup/page.tsx`: campo
+  password con icona occhio (mostra/nascondi in chiaro), pattern standard.
+- `src/app/(auth)/signup/page.tsx`: aggiunto anche il pulsante "Continua con
+  Google" (Supabase OAuth), già presente solo nel login — nessuna nuova
+  configurazione richiesta perché il provider Google è già attivo.
+
+Non implementato, richiede lavoro dell'utente prima che io possa procedere:
+- Apple/Facebook login: servono un account Apple Developer (a pagamento) e
+  un'app Meta for Developers, con client ID/secret da inserire nelle
+  impostazioni Auth di Supabase — inserire credenziali è un'azione che non
+  posso eseguire, va fatta dall'utente. Una volta configurati i provider su
+  Supabase, aggiungere i pulsanti in UI è immediato.
+- Autenticazione biometrica (Face ID/Touch ID) in fase di login: richiede
+  supporto WebAuthn/passkey, non presente oggi — scope più ampio, da
+  valutare come iniziativa a sé.
 
 ## [FATTO 2026-08-21] Nei paraggi: link al sito del locale
 Richiesta utente: "quando suggerisci posti in base alle preferenze, i posti
