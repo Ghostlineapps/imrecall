@@ -17,6 +17,23 @@ type SupabaseServerClient = ReturnType<typeof createClient>;
 export const FREE_MEMORIES_PER_MONTH = 100;
 export const FREE_TRANSCRIPTION_MINUTES_PER_MONTH = 60;
 export const PREMIUM_TRANSCRIPTION_MINUTES_PER_MONTH = 600;
+export const FREE_DOCUMENTS_PER_MONTH = 5;
+
+// L'app è ancora in fase di test con pochissimi utenti: su richiesta
+// esplicita dell'utente, NESSUN limite di business va applicato finché
+// questo flag non viene attivato — pur tenendo pronta tutta
+// l'infrastruttura (query, endpoint, UI) per quando i piani a pagamento
+// saranno lanciati davvero. Un solo env var da girare al lancio
+// (SUBSCRIPTION_LIMITS_ENABLED=true su Vercel), senza dover ritoccare
+// codice o rifare un giro di modifiche su ogni endpoint.
+//
+// Non tocca i tetti tecnici per singola registrazione (MAX_SECONDS_* in
+// /api/upload/audio e /api/upload/meeting): quelli esistono per non far
+// fallire la chiamata a Whisper (limite di 25MB per file), non sono una
+// leva di prezzo, quindi restano attivi anche in fase di test.
+export function limitsEnabled(): boolean {
+  return process.env.SUBSCRIPTION_LIMITS_ENABLED === "true";
+}
 
 export function startOfCurrentMonthIso(): string {
   const now = new Date();
@@ -43,9 +60,37 @@ export async function isMemoryQuotaExceeded(
   userId: string,
   tier: string | null | undefined
 ): Promise<boolean> {
+  if (!limitsEnabled()) return false;
   if (tier !== "free") return false;
   const used = await memoriesUsedThisMonth(supabase, userId);
   return used >= FREE_MEMORIES_PER_MONTH;
+}
+
+// Conta solo le memorie type "document" create dall'utente nel mese
+// corrente — sotto-quota più stretta rispetto al conteggio generale (100/
+// mese), pensata per giustificare l'abbonamento anche a chi usa l'app
+// soprattutto per archiviare documenti (bollette, contratti, ricevute)
+// senza saturare mai il tetto generale.
+export async function documentsUsedThisMonth(supabase: SupabaseServerClient, userId: string): Promise<number> {
+  const { count } = await supabase
+    .from("memories")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("type", "document")
+    .gte("created_at", startOfCurrentMonthIso());
+
+  return count ?? 0;
+}
+
+export async function isDocumentQuotaExceeded(
+  supabase: SupabaseServerClient,
+  userId: string,
+  tier: string | null | undefined
+): Promise<boolean> {
+  if (!limitsEnabled()) return false;
+  if (tier !== "free") return false;
+  const used = await documentsUsedThisMonth(supabase, userId);
+  return used >= FREE_DOCUMENTS_PER_MONTH;
 }
 
 export function transcriptionMinutesQuota(tier: string | null | undefined): number {
