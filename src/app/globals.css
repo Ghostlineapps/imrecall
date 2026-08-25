@@ -44,4 +44,21 @@
   .input-field {
     @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3 w-full text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-primary/50;
   }
+
+  /* Varianti chiare di btn-primary/btn-ghost/input-field, stesso principio
+     di .card-light: convivono con le originali finché il redesign celeste
+     (2026-08-21) non è esteso a tutte le schermate — vedi anche
+     Calendario/Ricordi/barra di navigazione, prime schermate convertite
+     dopo la Dashboard. */
+  .btn-primary-light {
+    @apply bg-gradient-to-br from-celeste-accent to-celeste-accentDark hover:brightness-105 text-white font-medium rounded-full px-5 py-2.5 transition-all disabled:opacity-40 disabled:pointer-events-none shadow-md shadow-celeste-navy/15;
+  }
+
+  .btn-ghost-light {
+    @apply text-celeste-muted hover:text-celeste-navy transition-colors;
+  }
+
+  .input-field-light {
+    @apply bg-celeste-bg border border-celeste-navy/10 rounded-xl px-4 py-3 w-full text-celeste-navy placeholder:text-celeste-muted focus:outline-none focus:ring-2 focus:ring-celeste-accent/40;
+  }
 }
