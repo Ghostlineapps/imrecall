@@ -2,6 +2,54 @@
 
 Aggiornato: 2026-08-25
 
+## [FATTO 2026-08-25] Integrazione Outlook/Microsoft → Appuntamenti + Outlook Calendar
+
+Richiesta utente (dopo l'integrazione Gmail): stessa cosa ma per chi usa
+Outlook/Hotmail invece di Gmail. Stessa logica APPOINTMENT_DETECTED, stesso
+rilevamento GPT-4o-mini condiviso (`src/lib/openai/emailAppointment.ts`, non
+duplicato), via Microsoft Graph invece delle API Google.
+
+**OAuth Microsoft (Entra ID / Azure AD)**: tenant `common` (account personali
+Outlook.com/Hotmail + aziendali/scolastici), scope `offline_access Mail.Read
+Calendars.ReadWrite User.Read`. A differenza di Google, Microsoft non offre
+un endpoint REST per revocare un singolo refresh token lato server: lo
+scollegamento cancella solo la riga in `microsoft_integrations`; per una
+revoca completa l'utente può rimuovere il consenso da
+account.microsoft.com/consents.
+
+**Cifratura token**: riusata la stessa chiave/funzioni AES-256-GCM già in
+uso per Google (`src/lib/google/tokenCrypto.ts`, `encryptToken`/
+`decryptToken`), evitando un secondo secret di cifratura su Vercel.
+
+File aggiunti:
+- `src/lib/microsoft/client.ts` — OAuth (authorize URL, scambio code, refresh
+  token, `getValidAccessToken`)
+- `src/lib/microsoft/mail.ts` — lettura inbox via Microsoft Graph
+  (`listRecentMessageIds`, `getMessage`)
+- `src/lib/microsoft/calendar.ts` — crea l'evento su Outlook Calendar; non
+  solleva mai eccezione verso il chiamante, se fallisce l'appuntamento resta
+  comunque salvato in ImRecall
+- `src/app/api/integrations/microsoft/connect/route.ts`,
+  `.../callback/route.ts`, `.../disconnect/route.ts`, `.../status/route.ts`
+- `src/app/api/cron/outlook-sync/route.ts` — gemello di `cron/gmail-sync`,
+  protetto da `OUTLOOK_CRON_SECRET`
+- `supabase/migrations/025_microsoft_integration.sql` — tabelle
+  `microsoft_integrations`, `processed_outlook_messages`, colonna
+  `appointments.microsoft_event_id`
+- `src/app/(app)/settings/integrations/page.tsx` — aggiunta seconda card
+  "Outlook" accanto a quella Gmail
+
+Infrastruttura non ancora completata da questo giro: 3 variabili d'ambiente
+Vercel (`MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`,
+`OUTLOOK_CRON_SECRET`), redeploy, migrazione 025 su Supabase e il job
+pg_cron `outlook-sync` — richiedono inserire credenziali/token in un campo,
+azione non consentita all'assistente (stesso principio già seguito per
+`MEDICATION_CRON_SECRET` e per l'integrazione Gmail sopra).
+
+Deciso anche, su richiesta esplicita dell'utente: non allargare la finestra
+di sincronizzazione iniziale di Gmail alle email storiche — resta limitata
+alle nuove email a partire dal momento del collegamento.
+
 ## [FATTO 2026-08-25] Integrazione Gmail → Appuntamenti + Google Calendar
 
 Richiesta utente: quando arriva su Gmail un'email che propone una riunione,
