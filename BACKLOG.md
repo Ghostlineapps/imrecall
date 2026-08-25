@@ -259,18 +259,12 @@ Non collegato ancora a nessuna logica di scoring: `priority_score` resta
 la regola fissa per tipo di oggi. Questo è solo il primo passo — raccogliere
 il segnale — prima di eventualmente usarlo per pesare i candidati futuri.
 
-**Richiede un'azione manuale dell'utente**: la migrazione 023 non è stata
-applicata al database di produzione (questa sessione non ha accesso diretto
-a Supabase) — va eseguita una volta nell'SQL Editor di Supabase:
-```sql
-alter table resurface_candidates
-  add column feedback text check (feedback in ('useful', 'not_useful'));
-```
-Finché non viene eseguita, i pulsanti compaiono ma la PATCH risponde 500
-(colonna inesistente) — il codice non controlla `response.ok`, quindi
-fallisce in silenzio: il messaggio di conferma appare comunque (aggiornamento
-ottimistico) ma il feedback non viene salvato davvero. Non ancora testato
-dal vivo con un candidato reale, né prima né dopo la migrazione.
+**[FATTO 2026-08-25] Migrazione 023 eseguita dall'utente** nell'SQL Editor
+di Supabase (stesso comando riportato sopra) — colonna `feedback` ora
+presente su `resurface_candidates`, i pulsanti 👍/👎 dovrebbero salvare
+correttamente. Non ancora testato dal vivo con un candidato reale (nessuna
+card "Just Became Relevant" ancora comparsa da verificare dopo la
+migrazione).
 
 ## [FATTO 2026-08-25] Avviso quando le notifiche push sono disattivate (bug farmaci)
 Bug report utente: "Stamattina la notifica del farmaco non è arrivata." Causa,
