@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 
 export async function POST(req: NextRequest) {
   const supabase = createClient();
@@ -10,15 +11,16 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { type, content, link_url, title, description, image } = body;
 
-  // Enforcement limite tier Free: 100 memorie/mese
+  // Enforcement limite tier Free: 100 memorie/mese, contate dal vivo su
+  // tutte le memorie dell'utente (vedi src/lib/subscription/limits.ts).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("subscription_tier, memory_count_this_month")
+    .select("subscription_tier")
     .eq("id", user.id)
     .single();
 
-  if (profile?.subscription_tier === "free" && profile.memory_count_this_month >= 100) {
-    return NextResponse.json({ error: "limit_reached", limit: 100 }, { status: 402 });
+  if (await isMemoryQuotaExceeded(supabase, user.id, profile?.subscription_tier)) {
+    return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
   }
 
   const { data: memory, error } = await supabase
