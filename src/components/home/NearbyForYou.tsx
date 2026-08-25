@@ -26,6 +26,20 @@ function labelFor(category: string) {
   return CATEGORY_LABELS[category] ?? (category.charAt(0).toUpperCase() + category.slice(1).replaceAll("_", " "));
 }
 
+// Non richiedere la posizione al browser più di una volta ogni ora quando il
+// permesso non è ancora stato concesso in modo definitivo (o è stato
+// negato): senza questo cooldown, ogni singola apertura della Home faceva
+// ripartire il prompt di geolocalizzazione, anche più volte al giorno —
+// stesso sintomo già risolto per il check-in in background in
+// useLocationCheckin.ts, qui applicato allo stesso componente che però,
+// a differenza del check-in, deve comunque mostrare qualcosa: nel
+// frattempo ripieghiamo sull'ultimo punto noto da /api/locations.
+// Se il permesso è già "granted" in modo definitivo, invece, richiedere la
+// posizione non mostra alcun prompt e possiamo farlo ad ogni apertura senza
+// penalizzare la freschezza dei suggerimenti.
+const GEO_COOLDOWN_MS = 1000 * 60 * 60; // 1 ora
+const GEO_STORAGE_KEY = "imrecall_nearby_geo_at";
+
 /**
  * "Nei tuoi paraggi": la risposta concreta a "cosa fa per semplificare la
  * vita" — arrivando in un posto nuovo, l'app propone subito i luoghi
@@ -38,30 +52,79 @@ export function NearbyForYou() {
   const [locating, setLocating] = useState(true);
 
   useEffect(() => {
-    if (!("geolocation" in navigator)) {
-      fallbackToLastKnown();
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        setLocating(false);
-      },
-      () => fallbackToLastKnown(),
-      { timeout: 8000, maximumAge: 5 * 60 * 1000 }
-    );
+    let cancelled = false;
 
     async function fallbackToLastKnown() {
       try {
         const res = await fetch("/api/locations?limit=1");
         const json = await res.json();
         const last = json?.locations?.[0];
-        if (last) setCoords({ lat: last.latitude, lon: last.longitude });
+        if (!cancelled && last) setCoords({ lat: last.latitude, lon: last.longitude });
       } finally {
-        setLocating(false);
+        if (!cancelled) setLocating(false);
       }
     }
+
+    function requestPosition() {
+      const markAttempted = () => localStorage.setItem(GEO_STORAGE_KEY, String(Date.now()));
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          markAttempted();
+          if (cancelled) return;
+          setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+          setLocating(false);
+        },
+        () => {
+          markAttempted();
+          fallbackToLastKnown();
+        },
+        { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+      );
+    }
+
+    function requestPositionRespectingCooldown() {
+      const lastAttemptAt = Number(localStorage.getItem(GEO_STORAGE_KEY) ?? 0);
+      if (Date.now() - lastAttemptAt < GEO_COOLDOWN_MS) {
+        fallbackToLastKnown();
+        return;
+      }
+      requestPosition();
+    }
+
+    if (!("geolocation" in navigator)) {
+      fallbackToLastKnown();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((status) => {
+          if (cancelled) return;
+          // Permesso già concesso in modo definitivo: nessun prompt in
+          // arrivo, possiamo chiedere la posizione fresca ogni volta.
+          if (status.state === "granted") {
+            requestPosition();
+          } else {
+            requestPositionRespectingCooldown();
+          }
+        })
+        .catch(() => {
+          if (!cancelled) requestPositionRespectingCooldown();
+        });
+    } else {
+      // Browser senza Permissions API (es. Safari meno recente): meglio
+      // rispettare comunque il cooldown per non rischiare di ri-chiedere
+      // il permesso ad ogni apertura.
+      requestPositionRespectingCooldown();
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const { data, isLoading } = useSWR(
