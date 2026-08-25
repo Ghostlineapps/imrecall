@@ -81,6 +81,14 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
           const maxMin = Math.round((data.max ?? 0) / 60);
           throw new Error(`Registrazione troppo lunga per il tuo piano (massimo ${maxMin} minuti).`);
         }
+        if (data?.error === "monthly_minutes_exceeded") {
+          throw new Error(
+            `Hai esaurito i minuti di trascrizione di questo mese (${data.max_minutes} min). Riprova il mese prossimo o passa a un piano superiore.`
+          );
+        }
+        if (data?.error === "limit_reached") {
+          throw new Error(`Hai raggiunto il limite di ${data.limit} memorie questo mese.`);
+        }
         if (data?.error === "file_too_large") {
           throw new Error(`File troppo grande (massimo ${data.max_mb} MB).`);
         }
