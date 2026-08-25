@@ -2,6 +2,65 @@
 
 Aggiornato: 2026-08-25
 
+## [FATTO 2026-08-25] Prezzo Premium, limite documenti Free, flag per disattivare i limiti in fase di test
+
+Richiesta utente: prezzo suggerito per il piano Premium. Ragionamento fatto
+con costi reali delle API (Whisper $0,006/min, gpt-4o-mini $0,15/$0,60 per
+1M token, gpt-4o $2,50/$10 per 1M token, controllati il 25/08/2026) e
+prezzi dei concorrenti (Otter.ai Pro $16,99/mese, $8,33-8,49/mese annuale;
+Fireflies.ai Pro $18/mese, $10/mese annuale; Wispr Flow Pro $15/mese,
+$12/mese annuale). COGS Premium nel caso peggiore (600 min/mese) ≈ $3,60
+di sola trascrizione + pochi euro di Vision/chat, media reale probabilmente
+€2-3/mese.
+
+**Decisioni prezzo/piano (discusse con l'utente, non ancora implementate a
+livello di pagamento/Stripe)**:
+- Premium: **11,99€/mese**, **119€/anno** (~2 mesi gratis, circa 17% di
+  sconto rispetto al mensile)
+- Offerta di conversione trial: popup "trial in scadenza tra 3 giorni" con
+  sconto ulteriore a **99€/anno** (~8,25€/mese effettivi), valido **24 ore**
+  dalla visualizzazione del popup — da implementare quando costruiremo il
+  sistema di trial/paywall vero e proprio (oggi `subscription_tier` è solo
+  una colonna sul profilo, nessuna integrazione Stripe)
+- Integrazione Gmail (rilevamento automatico conferme prenotazioni/voli con
+  aggiunta automatica al calendario) pianificata come funzionalità
+  esclusiva Premium — non ancora costruita, solo decisione di prodotto
+
+**Nuovo limite Free: 5 documenti/mese** (conteggio mensile, non lifetime —
+chiarito esplicitamente dall'utente), sotto-quota più stretta del tetto
+generale 100 memorie/mese, pensata per chi usa l'app soprattutto per
+archiviare documenti. Stesso pattern delle altre quote (query dal vivo
+filtrata sul mese corrente, nessun contatore salvato): nuove
+`documentsUsedThisMonth()` / `isDocumentQuotaExceeded()` in
+`src/lib/subscription/limits.ts`, applicate a `/api/upload/document`
+(nuovo errore `document_limit_reached`), con messaggio leggibile aggiunto
+in `DocumentCapture.tsx` (che prima non gestiva affatto i codici di
+errore delle quote, a differenza di AudioRecorder/MeetingRecorder).
+
+**Flag `limitsEnabled()` — nessun limite di business durante la fase di
+test**: istruzione esplicita dell'utente — "l'app, che è in fase di test e
+utilizzata da pochissimi utenti, deve essere senza limiti di utilizzo".
+Tutti i limiti di business (memorie/mese, minuti trascrizione/mese,
+documenti/mese) sono ora condizionati da `limitsEnabled()` in
+`src/lib/subscription/limits.ts`, che legge
+`process.env.SUBSCRIPTION_LIMITS_ENABLED === "true"` (default: disattivo).
+Con il flag disattivo, come oggi, nessun limite di business scatta mai —
+un solo env var da girare su Vercel al lancio vero, senza ritoccare
+codice. I tetti tecnici per singola registrazione (`MAX_SECONDS_*` in
+`/api/upload/audio` e `/api/upload/meeting`, legati al limite di 25MB
+di Whisper) restano invece sempre attivi, perché non sono una leva di
+prezzo ma un vincolo tecnico.
+
+File toccati: `src/lib/subscription/limits.ts`,
+`src/app/api/upload/audio/route.ts`, `src/app/api/upload/meeting/route.ts`,
+`src/app/api/upload/document/route.ts`,
+`src/components/capture/DocumentCapture.tsx`. Pubblicato in 5 commit
+separati, tutti con build "Ready" su Vercel.
+
+Non ancora deciso/implementato: prezzo scontato per eventuali promo future,
+flusso di pagamento/upgrade reale (Stripe o simile), l'integrazione Gmail
+in sé, e il sistema di trial/paywall che userà l'offerta 99€/anno-24h.
+
 ## [FATTO 2026-08-25] Prezzi/limiti: quota memorie/mese reale + monte ore mensile trascrizione
 
 Richiesta utente: "dobbiamo stabilire i prezzi. francamente 100 minuti sono
