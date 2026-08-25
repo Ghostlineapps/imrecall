@@ -2,6 +2,65 @@
 
 Aggiornato: 2026-08-25
 
+## [FATTO 2026-08-25] Integrazione Gmail → Appuntamenti + Google Calendar
+
+Richiesta utente: quando arriva su Gmail un'email che propone una riunione,
+una videocall o una prenotazione, ImRecall deve rilevarla da sola e creare
+l'appuntamento — sia dentro l'app (Appuntamenti) sia come evento gemello
+sul Google Calendar dell'utente. Stessa logica APPOINTMENT_DETECTED già in
+uso per screenshot di chat e riunioni registrate, applicata qui al testo
+delle email (source `email`).
+
+**OAuth Google**: un solo collegamento per utente, un'unica schermata di
+consenso con tre scope — `gmail.readonly` (solo lettura, mai scrittura/
+cancellazione sulla casella), `calendar.events` e `userinfo.email`.
+Consenso configurato su Google Cloud Console (Google Auth Platform) come
+app **Esterna in modalità Testing**: nessuna revisione Google richiesta,
+ma limite di 100 utenti di prova aggiunti manualmente (oggi solo
+`mitolo1@gmail.com`) — da ricordare se l'integrazione va offerta a più
+utenti, serve passare l'app in produzione (richiede revisione Google per
+gli scope sensibili/con restrizioni).
+
+Schema (migrazione 024): `google_integrations` (un refresh token cifrato
+per utente — AES-256-GCM via `src/lib/google/tokenCrypto.ts`, mai in
+chiaro — più access token in cache, email collegata, watermark
+`last_synced_at`), `processed_gmail_messages` (dedup email già
+controllate), colonna `google_event_id` su `appointments` per collegare
+l'evento gemello su Calendar.
+
+File principali: `src/lib/google/{client,gmail,calendar,tokenCrypto}.ts`
+(wrapper OAuth/Gmail API/Calendar API), `src/lib/openai/
+emailAppointment.ts` (rilevamento via gpt-4o-mini, stesso pattern delle
+altre fonti APPOINTMENT_DETECTED), `src/app/api/integrations/google/
+{connect,callback,disconnect,status}/route.ts` (flusso OAuth + stato),
+`src/app/api/cron/gmail-sync/route.ts` (polling periodico via pg_cron,
+protetto da `GMAIL_CRON_SECRET`, dedicato e diverso da
+`MEDICATION_CRON_SECRET`), `src/app/(app)/settings/integrations/page.tsx`
+(nuova pagina Impostazioni → Integrazioni per connettere/scollegare
+Gmail), link aggiunto in `src/app/(app)/settings/page.tsx`.
+
+**Infrastruttura non ancora completata da questo giro** (richiede inserire
+credenziali/token in un campo — azione non consentita all'assistente,
+stesso principio già seguito per `MEDICATION_CRON_SECRET`: da fare
+manualmente dall'utente):
+- 5 Environment Variables su Vercel: `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (32 byte hex,
+  generata con `openssl rand -hex 32`), `GMAIL_CRON_SECRET` (stesso
+  metodo), `NEXT_PUBLIC_APP_URL` (verificare sia già `https://
+  www.imrecall.app`).
+- Job `pg_cron` su Supabase (stesso meccanismo di `medication-reminders`,
+  vedi voce precedente in questo file) che chiama `/api/cron/gmail-sync`
+  periodicamente con `Authorization: Bearer <GMAIL_CRON_SECRET>` — da
+  eseguire nell'SQL Editor di Supabase con il secret incorporato,
+  frequenza da decidere con l'utente (indicativamente ogni 5-15 minuti).
+- Migrazione 024 da applicare al database (creazione tabelle
+  `google_integrations`/`processed_gmail_messages` + colonna
+  `google_event_id`).
+- Test end-to-end del flusso completo: connessione Gmail da Impostazioni
+  → Integrazioni, invio di un'email di prova con invito a una riunione,
+  verifica che il cron la rilevi e crei l'appuntamento sia in ImRecall sia
+  su Google Calendar.
+
 ## [FATTO 2026-08-25] Prezzo Premium, limite documenti Free, flag per disattivare i limiti in fase di test
 
 Richiesta utente: prezzo suggerito per il piano Premium. Ragionamento fatto
