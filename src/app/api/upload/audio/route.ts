@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import {
+  FREE_MEMORIES_PER_MONTH,
+  isMemoryQuotaExceeded,
+  transcriptionMinutesQuota,
+  transcriptionMinutesUsedThisMonth,
+} from "@/lib/subscription/limits";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -38,17 +44,41 @@ export async function POST(req: NextRequest) {
     .select("subscription_tier")
     .eq("id", user.id)
     .single();
+  const tier = profile?.subscription_tier;
 
-  const maxSeconds = profile?.subscription_tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PREMIUM;
+  // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
+  // tipi — vedi src/lib/subscription/limits.ts.
+  if (await isMemoryQuotaExceeded(supabase, user.id, tier)) {
+    return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
+  }
+
+  // Tetto per singola registrazione: limite tecnico legato a Whisper (vedi
+  // MAX_FILE_BYTES sotto), non la leva di differenziazione free/premium.
+  const maxSeconds = tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PREMIUM;
   if (duration > maxSeconds) {
     return NextResponse.json({ error: "duration_exceeded", max: maxSeconds }, { status: 402 });
+  }
+
+  // Monte ore mensile (audio + riunioni sommati): questa sì è la vera leva
+  // di differenziazione free/premium, ancorata al costo reale di Whisper
+  // ($0,006/min) — vedi src/lib/subscription/limits.ts e BACKLOG.md.
+  const minutesUsed = await transcriptionMinutesUsedThisMonth(supabase, user.id);
+  const minutesQuota = transcriptionMinutesQuota(tier);
+  if (minutesUsed + duration / 60 > minutesQuota) {
+    return NextResponse.json(
+      { error: "monthly_minutes_exceeded", max_minutes: minutesQuota, used_minutes: Math.round(minutesUsed) },
+      { status: 402 }
+    );
   }
 
   const path = `${user.id}/${crypto.randomUUID()}.webm`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
   if (buffer.length > MAX_FILE_BYTES) {
-    return NextResponse.json({ error: "file_too_large", max: MAX_FILE_BYTES }, { status: 402 });
+    return NextResponse.json(
+      { error: "file_too_large", max_mb: MAX_FILE_BYTES / (1024 * 1024) },
+      { status: 413 }
+    );
   }
 
   const { error: uploadError } = await supabase.storage
