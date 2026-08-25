@@ -28,7 +28,9 @@ export function TimelineFilters({
           onClick={() => onChange({ ...filters, type: t.value })}
           className={clsx(
             "px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors",
-            filters.type === t.value ? "bg-primary text-white" : "bg-white/5 text-white/50"
+            filters.type === t.value
+              ? "bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white"
+              : "bg-celeste-navy/5 text-celeste-muted"
           )}
         >
           {t.label}
