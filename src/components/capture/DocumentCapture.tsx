@@ -40,7 +40,21 @@ export function DocumentCapture({
       if (isHealth) formData.append("is_health", "true");
 
       const res = await fetch("/api/upload/document", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("upload_failed");
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (errData?.error === "limit_reached") {
+          throw new Error(`Hai raggiunto il limite di ${errData.limit} memorie questo mese.`);
+        }
+        if (errData?.error === "document_limit_reached") {
+          throw new Error(`Hai raggiunto il limite di ${errData.limit} documenti questo mese.`);
+        }
+        if (errData?.error === "file_too_large") {
+          throw new Error(`File troppo grande (massimo ${errData.max_mb} MB).`);
+        }
+        throw new Error("upload_failed");
+      }
+
       const data = await res.json();
 
       mutate("/api/memories");
@@ -58,8 +72,8 @@ export function DocumentCapture({
       } else {
         onSaved();
       }
-    } catch {
-      setError("Caricamento fallito. Controlla la connessione e riprova.");
+    } catch (err) {
+      setError(err instanceof Error && err.message !== "upload_failed" ? err.message : "Caricamento fallito. Controlla la connessione e riprova.");
     } finally {
       setUploading(false);
     }
