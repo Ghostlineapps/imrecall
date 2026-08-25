@@ -103,44 +103,46 @@ export default function AppointmentsPage() {
   }
 
   return (
-    <div className="px-4 pt-6 space-y-4">
+    // Palette celeste (redesign 2026-08-21/25, seconda schermata convertita
+    // dopo la Dashboard): stessa struttura di prima, solo colori.
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-4 text-celeste-navy">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Calendario</h1>
         <button
           onClick={() => setShowForm((v) => !v)}
           aria-label="Aggiungi appuntamento"
-          className="text-primary-light"
+          className="text-celeste-accentDark"
         >
           <Plus size={22} />
         </button>
       </div>
 
-      <p className="text-white/40 text-sm">
+      <p className="text-celeste-muted text-sm">
         Fotografa una chat o un invito nella barra qui sotto — riconosciamo data e ora
         automaticamente. Puoi anche aggiungerne uno a mano con il tasto +.
       </p>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="card space-y-3">
+        <form onSubmit={handleAdd} className="card-light space-y-3">
           <input
             type="text"
             placeholder="Titolo (es. Cena con Marco)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="input-field w-full"
+            className="input-field-light w-full"
           />
           <div className="flex gap-2">
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="input-field flex-1"
+              className="input-field-light flex-1"
             />
             <input
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="input-field flex-1"
+              className="input-field-light flex-1"
             />
           </div>
           <input
@@ -148,9 +150,9 @@ export default function AppointmentsPage() {
             placeholder="Luogo (opzionale)"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            className="input-field w-full"
+            className="input-field-light w-full"
           />
-          <button type="submit" disabled={saving} className="btn-primary w-full">
+          <button type="submit" disabled={saving} className="btn-primary-light w-full">
             {saving ? "Salvataggio…" : "Aggiungi appuntamento"}
           </button>
         </form>
@@ -158,12 +160,12 @@ export default function AppointmentsPage() {
 
       {/* Vista calendario mensile: un pallino sotto i giorni con almeno un
           appuntamento, tocca un giorno per filtrare la lista qui sotto. */}
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div className="flex items-center justify-between">
           <button
             onClick={() => setMonth((m) => subMonths(m, 1))}
             aria-label="Mese precedente"
-            className="text-white/40 hover:text-white p-1"
+            className="text-celeste-muted hover:text-celeste-navy p-1"
           >
             <ChevronLeft size={18} />
           </button>
@@ -171,7 +173,7 @@ export default function AppointmentsPage() {
           <button
             onClick={() => setMonth((m) => addMonths(m, 1))}
             aria-label="Mese successivo"
-            className="text-white/40 hover:text-white p-1"
+            className="text-celeste-muted hover:text-celeste-navy p-1"
           >
             <ChevronRight size={18} />
           </button>
@@ -179,7 +181,7 @@ export default function AppointmentsPage() {
 
         <div className="grid grid-cols-7 gap-y-1 text-center">
           {["L", "M", "M", "G", "V", "S", "D"].map((d, i) => (
-            <span key={i} className="text-xs text-white/30">
+            <span key={i} className="text-xs text-celeste-muted">
               {d}
             </span>
           ))}
@@ -197,17 +199,17 @@ export default function AppointmentsPage() {
                 onClick={() => setSelectedDay(selected ? null : day)}
                 className={clsx(
                   "aspect-square rounded-full flex flex-col items-center justify-center text-sm transition-colors mx-auto w-8",
-                  !inMonth && "text-white/15",
-                  inMonth && !selected && "text-white/70 hover:bg-white/5",
-                  selected && "bg-primary text-white",
-                  !selected && today && "border border-primary-light/60"
+                  !inMonth && "text-celeste-navy/20",
+                  inMonth && !selected && "text-celeste-navy/80 hover:bg-celeste-navy/5",
+                  selected && "bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white",
+                  !selected && today && "border border-celeste-accent/60"
                 )}
               >
                 {format(day, "d")}
                 <span
                   className={clsx(
                     "w-1 h-1 rounded-full mt-0.5",
-                    hasAppointment ? (selected ? "bg-white" : "bg-primary-light") : "bg-transparent"
+                    hasAppointment ? (selected ? "bg-white" : "bg-celeste-accent") : "bg-transparent"
                   )}
                 />
               </button>
@@ -216,7 +218,7 @@ export default function AppointmentsPage() {
         </div>
 
         {selectedDay && (
-          <button onClick={() => setSelectedDay(null)} className="text-xs text-primary-light">
+          <button onClick={() => setSelectedDay(null)} className="text-xs text-celeste-accentDark">
             Mostra tutti gli appuntamenti
           </button>
         )}
@@ -225,7 +227,7 @@ export default function AppointmentsPage() {
       {isLoading && (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="card h-16 animate-pulse bg-white/5" />
+            <div key={i} className="card-light h-16 animate-pulse bg-celeste-navy/5" />
           ))}
         </div>
       )}
@@ -238,7 +240,7 @@ export default function AppointmentsPage() {
       )}
 
       {!isLoading && !fetchFailed && visibleAppointments.length === 0 && !showForm && (
-        <p className="text-white/30 text-sm py-8 text-center">
+        <p className="text-celeste-muted text-sm py-8 text-center">
           {selectedDay ? "Nessun appuntamento in questo giorno." : "Nessun appuntamento in programma."}
         </p>
       )}
@@ -249,30 +251,30 @@ export default function AppointmentsPage() {
           const overdue = isPast(when);
 
           return (
-            <div key={a.id} className="card flex items-center gap-3">
+            <div key={a.id} className="card-light flex items-center gap-3">
               <button
                 onClick={() => markComplete(a.id)}
                 aria-label="Segna come fatto"
-                className="text-white/20 hover:text-green-400 transition-colors"
+                className="text-celeste-navy/25 hover:text-green-600 transition-colors"
               >
                 <CheckCircle2 size={22} />
               </button>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{a.title}</p>
-                <p className="text-xs text-white/40">
+                <p className="text-xs text-celeste-muted">
                   {format(when, "d MMMM yyyy · HH:mm", { locale: it })}
                   {a.location && ` · ${a.location}`}
                 </p>
               </div>
               {overdue && (
-                <span className="text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap bg-white/5 text-white/40">
+                <span className="text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap bg-celeste-navy/5 text-celeste-muted">
                   passato
                 </span>
               )}
               <button
                 onClick={() => remove(a.id)}
                 aria-label="Elimina appuntamento"
-                className="text-white/20 hover:text-urgent transition-colors"
+                className="text-celeste-navy/25 hover:text-urgent transition-colors"
               >
                 <Trash2 size={18} />
               </button>
