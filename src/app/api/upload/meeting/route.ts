@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import {
+  FREE_MEMORIES_PER_MONTH,
+  isMemoryQuotaExceeded,
+  transcriptionMinutesQuota,
+  transcriptionMinutesUsedThisMonth,
+} from "@/lib/subscription/limits";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Le riunioni sono registrazioni lunghe (fino a 60-90 minuti a seconda del
-// piano), quindi soglie diverse dalla nota vocale breve (/api/upload/audio,
-// 5/30 min). Il sistema di abbonamenti non è ancora attivo (tutti su
-// "free" di default): questi numeri sono un tetto ragionevole per l'MVP,
-// da rivedere quando i piani a pagamento saranno reali.
-const MAX_SECONDS_FREE = 3600; // 60 min
+// Tetto per singola riunione: 30 min Free, 90 min Premium — allineato al
+// monte ore mensile (60/600 min, vedi src/lib/subscription/limits.ts) e
+// allo stesso limite Free della nota vocale breve (/api/upload/audio).
+const MAX_SECONDS_FREE = 1800; // 30 min
 const MAX_SECONDS_PAID = 5400; // 90 min
 
 // Whisper accetta al massimo 25MB per file. MeetingRecorder.tsx forza
@@ -182,10 +186,31 @@ export async function POST(req: NextRequest) {
     .select("subscription_tier")
     .eq("id", user.id)
     .single();
+  const tier = profile?.subscription_tier;
 
-  const maxSeconds = profile?.subscription_tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PAID;
+  // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
+  // tipi — vedi src/lib/subscription/limits.ts.
+  if (await isMemoryQuotaExceeded(supabase, user.id, tier)) {
+    return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
+  }
+
+  // Tetto per singola registrazione: limite tecnico legato a Whisper, non
+  // la leva di differenziazione free/premium.
+  const maxSeconds = tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PAID;
   if (duration > maxSeconds) {
     return NextResponse.json({ error: "duration_exceeded", max: maxSeconds }, { status: 402 });
+  }
+
+  // Monte ore mensile (audio + riunioni sommati) — vera leva di
+  // differenziazione free/premium, ancorata al costo reale di Whisper
+  // ($0,006/min) — vedi src/lib/subscription/limits.ts e BACKLOG.md.
+  const minutesUsed = await transcriptionMinutesUsedThisMonth(supabase, user.id);
+  const minutesQuota = transcriptionMinutesQuota(tier);
+  if (minutesUsed + duration / 60 > minutesQuota) {
+    return NextResponse.json(
+      { error: "monthly_minutes_exceeded", max_minutes: minutesQuota, used_minutes: Math.round(minutesUsed) },
+      { status: 402 }
+    );
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
