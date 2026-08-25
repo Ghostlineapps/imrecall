@@ -2,6 +2,72 @@
 
 Aggiornato: 2026-08-25
 
+## [FATTO 2026-08-25] Prezzi/limiti: quota memorie/mese reale + monte ore mensile trascrizione
+
+Richiesta utente: "dobbiamo stabilire i prezzi. francamente 100 minuti sono
+veramente pochi [...] se qualcuno lo usa a scopo professionale con tante
+call i minuti sono veramente pochi e non giustificano l'abbonamento a
+premium [...] dobbiamo pur giustificare il costo di un abbonamento". Durante
+l'analisi è emerso anche un bug pre-esistente, non solo una domanda di
+prodotto: il conteggio "100 memorie/mese" del piano Free non ha mai
+funzionato.
+
+**Bug trovato**: la colonna `memory_count_this_month` (pensata per il
+limite Free) non veniva incrementata da nessun codice applicativo né da
+nessun trigger DB (unico trigger su insert di `memories` è
+`memories_update_streak`, non collegato) — restava sempre a 0, quindi il
+limite non scattava mai. In più, solo `/api/memories` (testo/link)
+controllava un limite qualsiasi: audio, foto, documenti e riunioni lo
+bypassavano del tutto.
+
+**Fix**: sostituito il contatore salvato con query dal vivo filtrate sul
+mese corrente (stesso pattern già in uso per il limite chat giornaliero in
+`/api/chat/route.ts`) — niente bisogno di un cron di reset mensile, che non
+esisteva ed era la causa radice del problema. Nuovo modulo
+`src/lib/subscription/limits.ts` con `memoriesUsedThisMonth()` e
+`isMemoryQuotaExceeded()`, applicato ora a tutti e 5 gli endpoint di
+creazione memoria (`/api/memories`, `/api/upload/audio`, `/api/upload/
+document`, `/api/upload/image`, `/api/upload/meeting`).
+
+**Nuova leva di business — monte ore mensile di trascrizione**: deciso con
+l'utente (via domanda esplicita) di aggiungere, oltre al conteggio memorie,
+un tetto mensile sui minuti di trascrizione (audio + riunioni sommati),
+ancorato al costo reale di Whisper ($0.006/min, controllato il 25/08/2026):
+**60 min/mese Free, 600 min/mese Premium**. È la leva che giustifica
+davvero l'abbonamento per chi usa l'app professionalmente con tante call,
+a differenza del solo tetto per singola registrazione. Implementato in
+`transcriptionMinutesUsedThisMonth()`/`transcriptionMinutesQuota()`,
+applicato a `/api/upload/audio` e `/api/upload/meeting` (nuovo errore
+`monthly_minutes_exceeded`).
+
+**Tetto per singola registrazione**, invariato per audio, abbassato per
+riunioni su richiesta dell'utente ("potremmo impostare anche il limite di
+30 minuti per riunione per la free e di 90 per la premium con il monte
+mensile che ci siamo detti"): audio 30 min Free / 100 min Premium
+(invariato), riunioni **30 min Free (prima 60)** / 90 min Premium
+(invariato) — il Free ora è coerente tra audio e riunioni.
+
+**UI**: `/api/user/usage` ora calcola tutto dal vivo invece di restituire
+il vecchio contatore morto; `settings/page.tsx` mostra sia "memorie questo
+mese" (solo Free) sia "minuti di trascrizione questo mese" (entrambi i
+piani); `AudioRecorder.tsx` e `MeetingRecorder.tsx` mostrano un messaggio
+d'errore leggibile per ciascun nuovo codice (`monthly_minutes_exceeded`,
+`limit_reached`) invece di fallire in silenzio — allineato anche
+`file_too_large` di `/api/upload/audio` alla convenzione `max_mb`/413 già
+usata dalle altre route upload (prima era `max` in byte/402, inconsistente).
+
+Pubblicato in 10 commit separati (workflow di upload via GitHub web).
+Non verificato con `tsc` in locale (npm install bloccato dal registro in
+questa sessione) — solo revisione manuale del codice, confermata dalla
+build "Ready" su Vercel in produzione per tutti e 10 i commit (nessun
+errore TypeScript emerso in fase di build).
+
+Non ancora deciso/implementato in questo giro: il prezzo in € del piano
+Premium, eventuali limiti sull'upload documenti (menzionato dall'utente
+come possibile leva aggiuntiva ma non approfondito), e il flusso di
+pagamento/upgrade vero e proprio (oggi `subscription_tier` è solo una
+colonna sul profilo, senza integrazione Stripe o simili).
+
 ## [FATTO 2026-08-25] Feedback utile/non utile su "Just Became Relevant"
 Nota di correzione: durante la conversazione avevo proposto di "prototipare"
 Just Became Relevant come se fosse una feature nuova della visione ImRecall
