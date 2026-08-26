@@ -13,6 +13,10 @@ import { MedicationSchedule } from "@/components/memory/MedicationSchedule";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+// 2026-08-26: palette celeste (decima schermata convertita). RelatedMemories,
+// IntentionActions, CircleBackButton, MindMap e MedicationSchedule restano
+// scuri per ora: sono componenti importati, fuori scope oggi — solo il
+// markup di questa pagina passa al tema chiaro.
 export default function MemoryDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -25,21 +29,25 @@ export default function MemoryDetailPage() {
   }
 
   if (isLoading || !memory) {
-    return <div className="px-4 pt-6"><div className="card h-32 animate-pulse bg-white/5" /></div>;
+    return (
+      <div className="bg-celeste-bg min-h-full px-4 pt-6">
+        <div className="card-light h-32 animate-pulse bg-celeste-navy/5" />
+      </div>
+    );
   }
 
   return (
-    <div className="px-4 pt-6 space-y-5">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-5 text-celeste-navy">
       <div className="flex items-center justify-between">
-        <button onClick={() => router.back()} className="btn-ghost flex items-center gap-1 text-sm">
+        <button onClick={() => router.back()} className="btn-ghost-light flex items-center gap-1 text-sm">
           <ArrowLeft size={16} /> Indietro
         </button>
-        <button onClick={handleDelete} className="text-white/30 hover:text-urgent transition-colors">
+        <button onClick={handleDelete} className="text-celeste-navy/30 hover:text-urgent transition-colors">
           <Trash2 size={18} />
         </button>
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         {memory.title && <h1 className="text-lg font-semibold">{memory.title}</h1>}
         {memory.media_url && (memory.type === "image" || memory.type === "medication") && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -53,21 +61,21 @@ export default function MemoryDetailPage() {
             href={memory.media_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-ghost flex items-center gap-2 w-full justify-center"
+            className="btn-ghost-light flex items-center gap-2 w-full justify-center"
           >
             <FileUp size={16} /> Apri file originale
           </a>
         )}
-        <p className="text-white/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
+        <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
 
-        <p className="text-xs text-white/30">
+        <p className="text-xs text-celeste-muted">
           {format(new Date(memory.memory_date), "d MMMM yyyy, HH:mm", { locale: it })}
         </p>
 
         {memory.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {memory.tags.map((tag: string) => (
-              <span key={tag} className="text-xs bg-white/5 text-white/50 px-2 py-1 rounded-full">
+              <span key={tag} className="text-xs bg-celeste-navy/5 text-celeste-muted px-2 py-1 rounded-full">
                 #{tag}
               </span>
             ))}
