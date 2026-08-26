@@ -11,6 +11,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 // Toggle a chip singolo con salvataggio immediato (niente form/tasto Salva):
 // scegliere "vegano" deve avere effetto subito sui consigli nei paraggi in
 // Home, senza un passaggio in più da ricordarsi di fare.
+// 2026-08-26: palette celeste (undicesima schermata convertita).
 export default function ProfilePreferencesPage() {
   const { data, isLoading } = useSWR("/api/profile", fetcher);
 
@@ -45,22 +46,22 @@ export default function ProfilePreferencesPage() {
   }
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <div className="flex items-center gap-2">
-        <Link href="/settings" className="text-white/50 text-sm">
+        <Link href="/settings" className="text-celeste-muted text-sm">
           ← Impostazioni
         </Link>
       </div>
 
       <div>
         <h1 className="text-xl font-semibold">Il tuo profilo</h1>
-        <p className="text-sm text-white/50 mt-1">
+        <p className="text-sm text-celeste-muted mt-1">
           Usiamo queste preferenze per segnalarti i posti giusti quando arrivi in un posto nuovo —
           ad esempio i ristoranti vegani vicino a te, invece di una lista generica.
         </p>
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <p className="font-medium">Alimentazione</p>
         <div className="flex flex-wrap gap-2">
           {DIETARY_OPTIONS.map((opt) => {
@@ -73,8 +74,8 @@ export default function ProfilePreferencesPage() {
                 className={clsx(
                   "px-3 py-1.5 rounded-full text-sm border transition-colors",
                   active
-                    ? "bg-primary border-primary text-white"
-                    : "border-white/15 text-white/60 hover:border-white/30"
+                    ? "bg-gradient-to-br from-celeste-accent to-celeste-accentDark border-celeste-accent text-white"
+                    : "border-celeste-navy/15 text-celeste-navy/60 hover:border-celeste-navy/30"
                 )}
               >
                 {opt.label}
@@ -84,7 +85,7 @@ export default function ProfilePreferencesPage() {
         </div>
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <p className="font-medium">Interessi</p>
         <div className="flex flex-wrap gap-2">
           {INTEREST_OPTIONS.map((opt) => {
@@ -97,8 +98,8 @@ export default function ProfilePreferencesPage() {
                 className={clsx(
                   "px-3 py-1.5 rounded-full text-sm border transition-colors",
                   active
-                    ? "bg-primary border-primary text-white"
-                    : "border-white/15 text-white/60 hover:border-white/30"
+                    ? "bg-gradient-to-br from-celeste-accent to-celeste-accentDark border-celeste-accent text-white"
+                    : "border-celeste-navy/15 text-celeste-navy/60 hover:border-celeste-navy/30"
                 )}
               >
                 {opt.label}
@@ -109,7 +110,7 @@ export default function ProfilePreferencesPage() {
       </div>
 
       {!isLoading && diet.length === 0 && interests.length === 0 && (
-        <p className="text-white/30 text-xs px-1">
+        <p className="text-celeste-muted text-xs px-1">
           Non hai ancora selezionato nulla: per ora i consigli nei paraggi saranno generici.
         </p>
       )}
