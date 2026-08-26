@@ -15,6 +15,7 @@ import {
 // scritta per il post Instagram "Come si usa" — stesso testo, stesso
 // ordine, qui semplicemente sempre a portata di mano nell'app invece che
 // solo su Instagram.
+// 2026-08-26: palette celeste (nona schermata convertita).
 const SECTIONS = [
   {
     icon: Compass,
@@ -65,23 +66,23 @@ const SECTIONS = [
 
 export default function GuidePage() {
   return (
-    <div className="px-4 pt-6 space-y-6 pb-4">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 space-y-6 pb-4 text-celeste-navy">
       <div>
         <h1 className="text-xl font-semibold">Istruzioni</h1>
-        <p className="text-sm text-white/50 mt-1">
+        <p className="text-sm text-celeste-muted mt-1">
           Una guida rapida a come funziona IMRECALL, passo per passo.
         </p>
       </div>
 
       <div className="space-y-3">
         {SECTIONS.map(({ icon: Icon, title, text }) => (
-          <div key={title} className="card flex gap-3">
-            <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-primary-light shrink-0">
+          <div key={title} className="card-light flex gap-3">
+            <div className="w-9 h-9 rounded-full bg-celeste-navy/5 flex items-center justify-center text-celeste-accent shrink-0">
               <Icon size={18} />
             </div>
             <div className="min-w-0">
               <p className="font-medium">{title}</p>
-              <p className="text-sm text-white/50 mt-1">{text}</p>
+              <p className="text-sm text-celeste-muted mt-1">{text}</p>
             </div>
           </div>
         ))}
