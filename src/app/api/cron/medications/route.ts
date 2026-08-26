@@ -38,16 +38,18 @@ export async function GET(req: NextRequest) {
   for (const m of medications) {
     // Evita reinvii se pg_cron chiama più volte nello stesso minuto (o con
     // un piccolo ritardo che fa ricadere due invocazioni sullo stesso
-    // orario di promemoria).
+    // orario di promemoria). Controlla anche taken_at: se l'utente ha già
+    // spuntato la dose — magari in anticipo, prima dell'orario previsto —
+    // non ha senso avvisarlo di prenderla quando l'orario scatta.
     const { data: existing } = await supabase
       .from("medication_logs")
-      .select("id, notified_at")
+      .select("id, notified_at, taken_at")
       .eq("medication_id", m.id)
       .eq("log_date", today)
       .eq("scheduled_time", nowTime)
       .maybeSingle();
 
-    if (existing?.notified_at) continue;
+    if (existing?.notified_at || existing?.taken_at) continue;
 
     if (existing) {
       await supabase
