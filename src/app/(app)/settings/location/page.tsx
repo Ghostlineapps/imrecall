@@ -77,8 +77,8 @@ function extractTakeoutPoints(json: unknown): Point[] {
         typeof loc.timestamp === "string"
           ? loc.timestamp
           : typeof loc.timestampMs === "string"
-            ? new Date(Number(loc.timestampMs)).toISOString()
-            : null;
+          ? new Date(Number(loc.timestampMs)).toISOString()
+          : null;
 
       if (parsed && timestamp) {
         points.push({ latitude: parsed.lat, longitude: parsed.lng, recorded_at: timestamp });
@@ -95,8 +95,8 @@ function extractTakeoutPoints(json: unknown): Point[] {
       typeof segment.startTime === "string"
         ? segment.startTime
         : typeof segment.startTimestamp === "string"
-          ? segment.startTimestamp
-          : undefined;
+        ? segment.startTimestamp
+        : undefined;
 
     const visit = (segment.visit ?? segment.placeVisit) as Record<string, unknown> | undefined;
     if (visit && startTime) {
@@ -171,6 +171,7 @@ async function sendPointsInChunks(
   return inserted;
 }
 
+// 2026-08-26: palette celeste (quattordicesima schermata convertita).
 export default function LocationSettingsPage() {
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -337,8 +338,8 @@ export default function LocationSettingsPage() {
             meta?.DateTimeOriginal instanceof Date
               ? meta.DateTimeOriginal
               : meta?.CreateDate instanceof Date
-                ? meta.CreateDate
-                : new Date(file.lastModified);
+              ? meta.CreateDate
+              : new Date(file.lastModified);
 
           points.push({
             latitude: gps.latitude,
@@ -410,26 +411,26 @@ export default function LocationSettingsPage() {
   }
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <div className="flex items-center gap-2">
-        <Link href="/settings" className="text-white/50 text-sm">
+        <Link href="/settings" className="text-celeste-muted text-sm">
           ← Impostazioni
         </Link>
       </div>
 
       <h1 className="text-xl font-semibold">Spostamenti</h1>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Importa da Google Maps</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Scarica la tua cronologia spostamenti da Google Takeout (o dall&apos;export Timeline
             del telefono) e caricala qui per importarla in IMRECALL. Il file viene letto sul
             telefono: anche export molto grandi funzionano.
           </p>
         </div>
 
-        <label className="btn-primary w-full text-center cursor-pointer inline-block">
+        <label className="btn-primary-light w-full text-center cursor-pointer inline-block">
           {importing ? "Importazione in corso…" : "Scegli file JSON"}
           <input
             type="file"
@@ -440,14 +441,14 @@ export default function LocationSettingsPage() {
           />
         </label>
 
-        {importMessage && <p className="text-sm text-primary-light">{importMessage}</p>}
+        {importMessage && <p className="text-sm text-celeste-accent">{importMessage}</p>}
         {importError && <p className="text-urgent text-sm">{importError}</p>}
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Importa dalle foto</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Seleziona foto dalla galleria: se contengono la posizione (GPS), la aggiungiamo ai
             tuoi spostamenti. Funziona con le foto scattate dalla fotocamera con i servizi di
             localizzazione attivi — screenshot e immagini scaricate da chat di solito non hanno
@@ -455,7 +456,7 @@ export default function LocationSettingsPage() {
           </p>
         </div>
 
-        <label className="btn-primary w-full text-center cursor-pointer inline-block">
+        <label className="btn-primary-light w-full text-center cursor-pointer inline-block">
           {photoImporting ? "Analisi in corso…" : "Scegli foto"}
           <input
             type="file"
@@ -467,34 +468,34 @@ export default function LocationSettingsPage() {
           />
         </label>
 
-        {photoImportMessage && <p className="text-sm text-primary-light">{photoImportMessage}</p>}
+        {photoImportMessage && <p className="text-sm text-celeste-accent">{photoImportMessage}</p>}
         {photoImportError && <p className="text-urgent text-sm">{photoImportError}</p>}
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Tracciamento posizione da oggi</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Da questo momento, IMRECALL può salvare periodicamente la tua posizione mentre tieni
             questa pagina aperta nel browser. Nota: sui browser mobili (specialmente iPhone) il
             tracciamento si interrompe se chiudi la scheda o l&apos;app.
           </p>
         </div>
 
-        <button onClick={toggleTracking} className="btn-primary w-full">
+        <button onClick={toggleTracking} className="btn-primary-light w-full">
           {tracking ? "Disattiva tracciamento" : "Attiva tracciamento"}
         </button>
 
         {tracking && lastPing && (
-          <p className="text-sm text-white/40">Ultima posizione salvata alle {lastPing}</p>
+          <p className="text-sm text-celeste-muted">Ultima posizione salvata alle {lastPing}</p>
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Dove mi trovavo?</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Scegli una data (l&apos;ora è facoltativa): IMRECALL cerca lo spostamento registrato
             più vicino a quel momento.
           </p>
@@ -505,29 +506,29 @@ export default function LocationSettingsPage() {
             type="date"
             value={searchDate}
             onChange={(e) => setSearchDate(e.target.value)}
-            className="input-field flex-1"
+            className="input-field-light flex-1"
           />
           <input
             type="time"
             value={searchTime}
             onChange={(e) => setSearchTime(e.target.value)}
             placeholder="Opzionale"
-            className="input-field flex-1"
+            className="input-field-light flex-1"
           />
         </div>
 
-        <button onClick={handleSearch} disabled={searching} className="btn-primary w-full">
+        <button onClick={handleSearch} disabled={searching} className="btn-primary-light w-full">
           {searching ? "Cerco…" : "Cerca"}
         </button>
 
         {searchError && <p className="text-urgent text-sm">{searchError}</p>}
 
         {searchResult && (
-          <div className="pt-2 border-t border-white/10">
+          <div className="pt-2 border-t border-celeste-navy/10">
             <p className="text-sm">
               {searchResult.place_name || `${searchResult.latitude.toFixed(5)}, ${searchResult.longitude.toFixed(5)}`}
             </p>
-            <p className="text-xs text-white/40 mt-1">
+            <p className="text-xs text-celeste-muted mt-1">
               Registrato alle {new Date(searchResult.recorded_at).toLocaleString("it-IT")}
               {searchResult.diff_minutes > 15 &&
                 ` (~${searchResult.diff_minutes} minuti dall'orario cercato)`}
@@ -540,23 +541,23 @@ export default function LocationSettingsPage() {
         <p className="font-medium px-1">I tuoi ultimi spostamenti</p>
 
         {locations.length === 0 && (
-          <p className="text-sm text-white/40 px-1">
+          <p className="text-sm text-celeste-muted px-1">
             Nessuno spostamento registrato ancora. Importa da Google Maps, dalle foto o attiva il
             tracciamento qui sopra.
           </p>
         )}
 
         {locations.map((loc: any) => (
-          <div key={loc.id} className="card py-2.5 flex items-center justify-between">
+          <div key={loc.id} className="card-light py-2.5 flex items-center justify-between">
             <div>
               <p className="text-sm">
                 {loc.place_name || `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}`}
               </p>
-              <p className="text-xs text-white/40 mt-0.5">
+              <p className="text-xs text-celeste-muted mt-0.5">
                 {new Date(loc.recorded_at).toLocaleString("it-IT")}
               </p>
             </div>
-            <span className="text-xs text-white/30 capitalize">{loc.source}</span>
+            <span className="text-xs text-celeste-muted capitalize">{loc.source}</span>
           </div>
         ))}
       </div>
