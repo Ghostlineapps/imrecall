@@ -6,9 +6,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "IMRECALL — la tua memoria, sempre con te",
+  title: "IMRECALL — la tua memoria, in orbita",
   description:
-    "Cattura pensieri, foto e voce. IMRECALL li ricorda per te — e te li fa ritrovare al momento giusto: nel posto giusto, nel giorno giusto.",
+    "Cattura tutto quello che vivi — pensieri, foto, voce, farmaci, scadenze. IMRECALL lo tiene in orbita e te lo fa ritrovare esattamente quando torna a contare.",
   manifest: "/manifest.json",
   // Senza questo, Safari/iOS non trova nessuna icona dedicata per "Aggiungi
   // a Home" e si inventa da solo un placeholder — la prima lettera del
