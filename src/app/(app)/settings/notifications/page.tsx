@@ -15,6 +15,7 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+// 2026-08-26: palette celeste (dodicesima schermata convertita).
 export default function NotificationsSettingsPage() {
   const [supported, setSupported] = useState(true);
   const [enabled, setEnabled] = useState(false);
@@ -95,19 +96,19 @@ export default function NotificationsSettingsPage() {
   }
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <div className="flex items-center gap-2">
-        <Link href="/settings" className="text-white/50 text-sm">
+        <Link href="/settings" className="text-celeste-muted text-sm">
           ← Impostazioni
         </Link>
       </div>
 
       <h1 className="text-xl font-semibold">Notifiche</h1>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Promemoria email</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             {userEmail
               ? `Le email di promemoria per le scadenze arrivano automaticamente a ${userEmail}.`
               : "Le email di promemoria per le scadenze arrivano automaticamente al tuo indirizzo."}
@@ -115,10 +116,10 @@ export default function NotificationsSettingsPage() {
         </div>
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Notifiche push</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Ricevi un avviso push sul telefono o computer quando una scadenza si avvicina. Su
             iPhone funziona solo se aggiungi IMRECALL alla schermata Home (Safari → Condividi →
             Aggiungi a Home).
@@ -133,7 +134,7 @@ export default function NotificationsSettingsPage() {
           <button
             onClick={enabled ? disablePush : enablePush}
             disabled={loading}
-            className="btn-primary w-full"
+            className="btn-primary-light w-full"
           >
             {loading ? "Attendi…" : enabled ? "Disattiva notifiche push" : "Attiva notifiche push"}
           </button>
