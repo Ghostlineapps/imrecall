@@ -67,7 +67,7 @@ export default function SignupPage() {
         <div>
           <h1 className="text-2xl font-semibold">Crea il tuo account</h1>
           <p className="text-white/50 text-sm mt-1">
-            La tua memoria, sempre con te.
+            La tua memoria, in orbita.
           </p>
         </div>
 
