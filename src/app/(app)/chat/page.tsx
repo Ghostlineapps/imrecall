@@ -72,20 +72,24 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] px-4 pt-6">
+    // Palette celeste (redesign 2026-08-21/26, quarta schermata convertita
+    // dopo Dashboard, Calendario e Ricordi): stessa struttura di prima, solo
+    // colori. Il fumetto dell'utente usa il gradiente celeste al posto del
+    // vecchio bg-primary indaco, coerente con i bottoni primari altrove.
+    <div className="flex flex-col h-[calc(100vh-8rem)] px-4 pt-6 bg-celeste-bg text-celeste-navy">
       <h1 className="text-xl font-semibold mb-4">Chiedi ai tuoi ricordi</h1>
 
       <div className="flex-1 overflow-y-auto space-y-3 pb-4">
         {messages.length === 0 && (
           <div className="space-y-2 pt-8">
-            <p className="text-white/40 text-sm flex items-center gap-2">
+            <p className="text-celeste-muted text-sm flex items-center gap-2">
               <Sparkles size={14} /> Prova a chiedere:
             </p>
             {SUGGESTIONS.map((s) => (
               <button
                 key={s}
                 onClick={() => send(s)}
-                className="block w-full text-left card hover:bg-white/5 text-sm text-white/70"
+                className="block w-full text-left card-light hover:bg-celeste-navy/5 text-sm text-celeste-navy/70"
               >
                 {s}
               </button>
@@ -98,8 +102,8 @@ export default function ChatPage() {
             key={i}
             className={
               m.role === "user"
-                ? "ml-auto max-w-[85%] bg-primary rounded-2xl rounded-br-sm px-4 py-2.5 text-sm"
-                : "mr-auto max-w-[85%] card rounded-bl-sm text-sm"
+                ? "ml-auto max-w-[85%] bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm"
+                : "mr-auto max-w-[85%] card-light rounded-bl-sm text-sm"
             }
           >
             {m.content || (loading && i === messages.length - 1 ? "…" : "")}
@@ -114,9 +118,13 @@ export default function ChatPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send(input)}
           placeholder="Fai una domanda…"
-          className="input-field"
+          className="input-field-light"
         />
-        <button onClick={() => send(input)} disabled={loading} className="p-3 bg-primary rounded-full disabled:opacity-40">
+        <button
+          onClick={() => send(input)}
+          disabled={loading}
+          className="p-3 bg-gradient-to-br from-celeste-accent to-celeste-accentDark text-white rounded-full disabled:opacity-40"
+        >
           <Send size={16} />
         </button>
       </div>
