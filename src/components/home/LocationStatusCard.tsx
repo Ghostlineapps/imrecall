@@ -30,6 +30,12 @@ export function LocationStatusCard() {
         <MapPinned size={18} />
       </div>
       <div className="min-w-0 flex-1">
+        {/* Etichetta fissa: prima, con una posizione già registrata, la
+            card mostrava solo l'indirizzo (es. "Via Roma 12") senza dire
+            da nessuna parte che si tratta di "Spostamenti" — chi non se lo
+            ricordava a memoria non capiva a cosa servisse la card.
+            Segnalato dall'utente. */}
+        <p className="text-xs font-medium text-celeste-accentDark">Spostamenti</p>
         {last ? (
           <>
             <p className="text-sm font-medium truncate text-celeste-navy">{last.place_name ?? "Posizione registrata"}</p>
@@ -38,10 +44,7 @@ export function LocationStatusCard() {
             </p>
           </>
         ) : (
-          <>
-            <p className="text-sm font-medium text-celeste-navy">Spostamenti</p>
-            <p className="text-xs text-celeste-muted">Importa la cronologia per attivare i ricordi di prossimità</p>
-          </>
+          <p className="text-xs text-celeste-muted">Importa la cronologia per attivare i ricordi di prossimità</p>
         )}
       </div>
       <ChevronRight size={18} className="text-celeste-navy/25 shrink-0" />
