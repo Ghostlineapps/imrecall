@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
+import { ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -24,8 +25,11 @@ export default function SettingsPage() {
     <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <h1 className="text-xl font-semibold">Impostazioni</h1>
 
-      <div className="card-light space-y-1">
-        <p className="text-sm text-celeste-muted">Piano attuale</p>
+      <Link href="/settings/premium" className="card-light space-y-1 block">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-celeste-muted">Piano attuale</p>
+          <ChevronRight size={16} className="text-celeste-navy/25" />
+        </div>
         <p className="font-medium capitalize">{data?.subscription_tier ?? "free"}</p>
         {data?.subscription_tier === "free" && (
           <p className="text-xs text-celeste-muted mt-1">
@@ -36,7 +40,10 @@ export default function SettingsPage() {
           {data?.transcription_minutes_this_month ?? 0}/{data?.transcription_minutes_limit ?? 60} min di
           trascrizione questo mese (audio + riunioni)
         </p>
-      </div>
+        {data?.subscription_tier === "free" && (
+          <p className="text-xs text-celeste-accentDark font-medium mt-1">Scopri Premium →</p>
+        )}
+      </Link>
 
       <Link href="/settings/profile" className="card-light block">
         <p className="font-medium">Il tuo profilo</p>
