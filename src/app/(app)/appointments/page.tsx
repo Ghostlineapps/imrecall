@@ -16,7 +16,7 @@ import {
   subMonths,
 } from "date-fns";
 import { it } from "date-fns/locale";
-import { CheckCircle2, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -25,6 +25,7 @@ export default function AppointmentsPage() {
   const { data, isLoading, error, mutate } = useSWR("/api/appointments", fetcher);
 
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -73,29 +74,65 @@ export default function AppointmentsPage() {
 
   async function remove(id: string) {
     await fetch(`/api/appointments/${id}`, { method: "DELETE" });
+    if (editingId === id) closeForm();
     mutate();
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setTitle("");
+    setDate("");
+    setTime("");
+    setLocation("");
+  }
+
+  function openNewForm() {
+    if (showForm && !editingId) {
+      setShowForm(false);
+      return;
+    }
+    setEditingId(null);
+    setTitle("");
+    setDate("");
+    setTime("");
+    setLocation("");
+    setShowForm(true);
+  }
+
+  function startEdit(a: any) {
+    const when = new Date(a.appointment_at);
+    setEditingId(a.id);
+    setTitle(a.title);
+    setDate(format(when, "yyyy-MM-dd"));
+    setTime(format(when, "HH:mm"));
+    setLocation(a.location ?? "");
+    setShowForm(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title || !date || !time) return;
 
     setSaving(true);
     try {
-      await fetch("/api/appointments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          appointment_at: new Date(`${date}T${time}:00`).toISOString(),
-          location: location || null,
-        }),
-      });
-      setTitle("");
-      setDate("");
-      setTime("");
-      setLocation("");
-      setShowForm(false);
+      const appointment_at = new Date(`${date}T${time}:00`).toISOString();
+      const payload = { title, appointment_at, location: location || null };
+
+      if (editingId) {
+        await fetch(`/api/appointments/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetch("/api/appointments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      closeForm();
       mutate();
     } finally {
       setSaving(false);
@@ -105,11 +142,14 @@ export default function AppointmentsPage() {
   return (
     // Palette celeste (redesign 2026-08-21/25, seconda schermata convertita
     // dopo la Dashboard): stessa struttura di prima, solo colori.
+    // 2026-08-26: aggiunta la modifica di un appuntamento esistente (prima
+    // si poteva solo segnarlo fatto o eliminarlo) e le etichette "Data"/"Ora"
+    // sopra ai due campi, che prima erano due caselle vuote senza indicazioni.
     <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-4 text-celeste-navy">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Calendario</h1>
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={openNewForm}
           aria-label="Aggiungi appuntamento"
           className="text-celeste-accentDark"
         >
@@ -123,7 +163,7 @@ export default function AppointmentsPage() {
       </p>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="card-light space-y-3">
+        <form onSubmit={handleSubmit} className="card-light space-y-3">
           <input
             type="text"
             placeholder="Titolo (es. Cena con Marco)"
@@ -132,18 +172,24 @@ export default function AppointmentsPage() {
             className="input-field-light w-full"
           />
           <div className="flex gap-2">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="input-field-light flex-1"
-            />
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="input-field-light flex-1"
-            />
+            <div className="flex-1 space-y-1">
+              <label className="text-xs text-celeste-muted px-1">Data</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="input-field-light w-full"
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <label className="text-xs text-celeste-muted px-1">Ora</label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="input-field-light w-full"
+              />
+            </div>
           </div>
           <input
             type="text"
@@ -152,9 +198,14 @@ export default function AppointmentsPage() {
             onChange={(e) => setLocation(e.target.value)}
             className="input-field-light w-full"
           />
-          <button type="submit" disabled={saving} className="btn-primary-light w-full">
-            {saving ? "Salvataggio…" : "Aggiungi appuntamento"}
-          </button>
+          <div className="flex gap-2">
+            <button type="submit" disabled={saving} className="btn-primary-light flex-1">
+              {saving ? "Salvataggio…" : editingId ? "Salva modifiche" : "Aggiungi appuntamento"}
+            </button>
+            <button type="button" onClick={closeForm} className="btn-ghost-light px-4">
+              Annulla
+            </button>
+          </div>
         </form>
       )}
 
@@ -259,18 +310,29 @@ export default function AppointmentsPage() {
               >
                 <CheckCircle2 size={22} />
               </button>
-              <div className="min-w-0 flex-1">
+              <button
+                onClick={() => startEdit(a)}
+                className="min-w-0 flex-1 text-left"
+                aria-label="Modifica appuntamento"
+              >
                 <p className="text-sm font-medium">{a.title}</p>
                 <p className="text-xs text-celeste-muted">
                   {format(when, "d MMMM yyyy · HH:mm", { locale: it })}
                   {a.location && ` · ${a.location}`}
                 </p>
-              </div>
+              </button>
               {overdue && (
                 <span className="text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap bg-celeste-navy/5 text-celeste-muted">
                   passato
                 </span>
               )}
+              <button
+                onClick={() => startEdit(a)}
+                aria-label="Modifica appuntamento"
+                className="text-celeste-navy/25 hover:text-celeste-accentDark transition-colors"
+              >
+                <Pencil size={18} />
+              </button>
               <button
                 onClick={() => remove(a.id)}
                 aria-label="Elimina appuntamento"
