@@ -1,7 +1,7 @@
 {
   "name": "IMRECALL — Personal Memory OS",
   "short_name": "IMRECALL",
-  "description": "La tua memoria, sempre con te.",
+  "description": "La tua memoria, in orbita.",
   "start_url": "/home",
   "display": "standalone",
   "background_color": "#EAF2F8",
