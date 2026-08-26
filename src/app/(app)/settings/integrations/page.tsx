@@ -15,6 +15,7 @@ type Status = {
   last_synced_at?: string;
 };
 
+// 2026-08-26: palette celeste (tredicesima schermata convertita).
 function IntegrationsContent() {
   const searchParams = useSearchParams();
   const {
@@ -68,9 +69,9 @@ function IntegrationsContent() {
   }
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <div className="flex items-center gap-2">
-        <Link href="/settings" className="text-white/50 text-sm">
+        <Link href="/settings" className="text-celeste-muted text-sm">
           ← Impostazioni
         </Link>
       </div>
@@ -78,12 +79,12 @@ function IntegrationsContent() {
       <h1 className="text-xl font-semibold">Integrazioni</h1>
 
       {googleBanner === "connected" && (
-        <div className="card space-y-1 border border-green-500/30">
+        <div className="card-light space-y-1 border border-green-500/30">
           <p className="text-sm">Gmail collegato con successo.</p>
         </div>
       )}
       {googleBanner === "error" && (
-        <div className="card space-y-1">
+        <div className="card-light space-y-1">
           <p className="text-urgent text-sm">
             Collegamento Gmail non riuscito. Se hai annullato l&apos;autorizzazione su Google va
             bene così, altrimenti riprova tra poco.
@@ -91,12 +92,12 @@ function IntegrationsContent() {
         </div>
       )}
       {microsoftBanner === "connected" && (
-        <div className="card space-y-1 border border-green-500/30">
+        <div className="card-light space-y-1 border border-green-500/30">
           <p className="text-sm">Outlook collegato con successo.</p>
         </div>
       )}
       {microsoftBanner === "error" && (
-        <div className="card space-y-1">
+        <div className="card-light space-y-1">
           <p className="text-urgent text-sm">
             Collegamento Outlook non riuscito. Se hai annullato l&apos;autorizzazione su Microsoft
             va bene così, altrimenti riprova tra poco.
@@ -104,63 +105,63 @@ function IntegrationsContent() {
         </div>
       )}
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Gmail</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Quando arriva un&apos;email che propone una riunione, una videocall o una
             prenotazione, IMRECALL la rileva automaticamente e crea l&apos;appuntamento — sia qui
             nell&apos;app, sia sul tuo Google Calendar.
           </p>
         </div>
 
-        {googleLoading && <p className="text-sm text-white/40">Verifica collegamento…</p>}
+        {googleLoading && <p className="text-sm text-celeste-muted">Verifica collegamento…</p>}
 
         {!googleLoading && googleData?.connected && (
           <>
-            <p className="text-sm text-white/50">
-              Collegato come <span className="text-white/80">{googleData.google_email}</span>
+            <p className="text-sm text-celeste-muted">
+              Collegato come <span className="text-celeste-navy/80">{googleData.google_email}</span>
             </p>
-            <button onClick={disconnectGoogle} disabled={disconnectingGoogle} className="btn-ghost w-full">
+            <button onClick={disconnectGoogle} disabled={disconnectingGoogle} className="btn-ghost-light w-full">
               {disconnectingGoogle ? "Scollegamento…" : "Scollega Gmail"}
             </button>
           </>
         )}
 
         {!googleLoading && !googleData?.connected && (
-          <a href="/api/integrations/google/connect" className="btn-primary w-full block text-center">
+          <a href="/api/integrations/google/connect" className="btn-primary-light w-full block text-center">
             Connetti Gmail
           </a>
         )}
 
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-celeste-muted">
           Leggiamo solo le email in arrivo per riconoscere impegni con data e ora — non
           modifichiamo né cancelliamo nulla nella tua casella. Puoi scollegare in qualsiasi
           momento.
         </p>
       </div>
 
-      <div className="card space-y-3">
+      <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Outlook</p>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-celeste-muted mt-1">
             Stessa cosa, ma per la posta Outlook/Hotmail: riunioni, videocall e prenotazioni
             rilevate automaticamente e aggiunte come appuntamento — sia qui nell&apos;app, sia sul
             tuo Outlook Calendar.
           </p>
         </div>
 
-        {microsoftLoading && <p className="text-sm text-white/40">Verifica collegamento…</p>}
+        {microsoftLoading && <p className="text-sm text-celeste-muted">Verifica collegamento…</p>}
 
         {!microsoftLoading && microsoftData?.connected && (
           <>
-            <p className="text-sm text-white/50">
-              Collegato come <span className="text-white/80">{microsoftData.microsoft_email}</span>
+            <p className="text-sm text-celeste-muted">
+              Collegato come <span className="text-celeste-navy/80">{microsoftData.microsoft_email}</span>
             </p>
             <button
               onClick={disconnectMicrosoft}
               disabled={disconnectingMicrosoft}
-              className="btn-ghost w-full"
+              className="btn-ghost-light w-full"
             >
               {disconnectingMicrosoft ? "Scollegamento…" : "Scollega Outlook"}
             </button>
@@ -168,12 +169,12 @@ function IntegrationsContent() {
         )}
 
         {!microsoftLoading && !microsoftData?.connected && (
-          <a href="/api/integrations/microsoft/connect" className="btn-primary w-full block text-center">
+          <a href="/api/integrations/microsoft/connect" className="btn-primary-light w-full block text-center">
             Connetti Outlook
           </a>
         )}
 
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-celeste-muted">
           Leggiamo solo le email in arrivo per riconoscere impegni con data e ora — non
           modifichiamo né cancelliamo nulla nella tua casella. Puoi scollegare in qualsiasi
           momento.
