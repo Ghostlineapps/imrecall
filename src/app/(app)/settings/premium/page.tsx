@@ -93,16 +93,28 @@ export default function PremiumPage() {
       </div>
 
       <div className="space-y-2">
-        <p className="font-medium px-1">In arrivo per chi ha Premium</p>
+        <p className="font-medium px-1">Integrazioni email</p>
+
         <div className="card-light flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-celeste-accent/10 flex items-center justify-center text-celeste-accentDark shrink-0">
             <Mail size={18} />
           </div>
           <div>
-            <p className="text-sm font-medium">Integrazione Gmail e Outlook</p>
+            <p className="text-sm font-medium">Gmail</p>
             <p className="text-xs text-celeste-muted mt-0.5">
-              Rilevamento automatico di appuntamenti e scadenze dalle email. In fase di attivazione.
+              Rilevamento automatico di appuntamenti e riunioni dalle email, con evento gemello su
+              Google Calendar. Attiva.
             </p>
+          </div>
+        </div>
+
+        <div className="card-light flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-celeste-navy/5 flex items-center justify-center text-celeste-muted shrink-0">
+            <Mail size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Outlook</p>
+            <p className="text-xs text-celeste-muted mt-0.5">Stessa funzione per Outlook/Hotmail. In arrivo.</p>
           </div>
         </div>
       </div>
