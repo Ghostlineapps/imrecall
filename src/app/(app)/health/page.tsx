@@ -13,6 +13,9 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 // del sangue, visite specialistiche...) come foto o file, oltre ai
 // farmaci. La ricerca generica continua a funzionare su tutti i ricordi
 // indipendentemente da questa sezione (vedi migrazione 020).
+// 2026-08-26: palette celeste (ottava schermata convertita). MemoryCard usa
+// la variante `light` già introdotta con Ricordi; CaptureSheet resta scuro
+// per ora (componente condiviso, fuori scope).
 export default function HealthPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const { data, isLoading } = useSWR("/api/memories?is_health=true&limit=100", fetcher);
@@ -31,16 +34,16 @@ export default function HealthPage() {
   }, {});
 
   return (
-    <div className="px-4 pt-6 space-y-5">
+    <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-5 text-celeste-navy">
       <h1 className="text-xl font-semibold">Salute</h1>
-      <p className="text-white/40 text-sm">
+      <p className="text-celeste-muted text-sm">
         Farmaci, referti ed esami in un unico posto. Carica la foto o il file di un esame del
         sangue, di una visita specialistica o di qualsiasi altro documento medico.
       </p>
 
       <button
         onClick={() => setSheetOpen(true)}
-        className="btn-primary w-full flex items-center justify-center gap-2"
+        className="btn-primary-light w-full flex items-center justify-center gap-2"
       >
         <Plus size={18} />
         Aggiungi referto o farmaco
@@ -49,15 +52,15 @@ export default function HealthPage() {
       {isLoading && (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="card h-16 animate-pulse bg-white/5" />
+            <div key={i} className="card-light h-16 animate-pulse bg-celeste-navy/5" />
           ))}
         </div>
       )}
 
       {!isLoading && memories.length === 0 && (
         <div className="py-10 text-center space-y-2">
-          <HeartPulse size={28} className="mx-auto text-white/20" />
-          <p className="text-white/30 text-sm">
+          <HeartPulse size={28} className="mx-auto text-celeste-navy/20" />
+          <p className="text-celeste-muted text-sm">
             Ancora nessun referto o farmaco qui. Tocca il pulsante sopra per aggiungerne uno.
           </p>
         </div>
@@ -65,9 +68,9 @@ export default function HealthPage() {
 
       {Object.entries(grouped).map(([day, items]) => (
         <div key={day} className="space-y-2">
-          <p className="text-xs text-white/40 uppercase tracking-wide">{day}</p>
+          <p className="text-xs text-celeste-muted uppercase tracking-wide">{day}</p>
           {(items as any[]).map((m) => (
-            <MemoryCard key={m.id} memory={m} />
+            <MemoryCard key={m.id} memory={m} light />
           ))}
         </div>
       ))}
