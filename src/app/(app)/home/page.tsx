@@ -65,7 +65,7 @@ export default async function HomePage() {
               {greeting()}
               {firstName ? `, ${firstName}` : ""}
             </h1>
-            <p className="text-white/75 text-sm mt-1.5">La tua memoria, sempre con te.</p>
+            <p className="text-white/75 text-sm mt-1.5">La tua memoria, in orbita.</p>
           </div>
           <StreakBadge days={profile?.capture_streak_days ?? 0} />
         </div>
