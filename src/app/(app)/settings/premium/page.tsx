@@ -109,12 +109,14 @@ export default function PremiumPage() {
         </div>
 
         <div className="card-light flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-celeste-navy/5 flex items-center justify-center text-celeste-muted shrink-0">
+          <div className="w-9 h-9 rounded-full bg-celeste-accent/10 flex items-center justify-center text-celeste-accentDark shrink-0">
             <Mail size={18} />
           </div>
           <div>
             <p className="text-sm font-medium">Outlook</p>
-            <p className="text-xs text-celeste-muted mt-0.5">Stessa funzione per Outlook/Hotmail. In arrivo.</p>
+            <p className="text-xs text-celeste-muted mt-0.5">
+              Stessa funzione per Outlook/Hotmail, con evento gemello su Outlook Calendar. Attiva.
+            </p>
           </div>
         </div>
       </div>
