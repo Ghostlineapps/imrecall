@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { stripe } from "@/lib/stripe/client";
 import { createServiceClient } from "@/lib/supabase/server";
+import { sendEmail } from "@/lib/email/resend";
+import { FOUNDER_WELCOME_SUBJECT, founderWelcomeEmailHtml } from "@/lib/email/templates/founder-welcome";
 
 // Riceve gli eventi Stripe e aggiorna lo stato Premium/Founder su
 // Supabase. Usa sempre il service client (mai quello legato alla sessione
@@ -79,6 +81,21 @@ export async function POST(req: NextRequest) {
         if (error) {
           console.error("Errore aggiornando profilo dopo checkout Founder:", error);
           return NextResponse.json({ error: "db_update_failed" }, { status: 500 });
+        }
+
+        // Email di benvenuto Founder — solo per gli acquisti reali via
+        // Stripe. I posti assegnati manualmente (SQL diretto, vedi
+        // discussione 2026-08-27) non passano da qui: per quelli c'è
+        // /api/admin/founder-welcome, da chiamare a mano.
+        const founderEmail = session.customer_details?.email;
+        if (founderEmail) {
+          await sendEmail({
+            to: founderEmail,
+            subject: FOUNDER_WELCOME_SUBJECT,
+            html: founderWelcomeEmailHtml(),
+          });
+        } else {
+          console.warn("checkout.session.completed Founder senza customer_details.email, email di benvenuto saltata:", session.id);
         }
       }
       break;
