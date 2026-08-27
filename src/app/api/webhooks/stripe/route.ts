@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe/client";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/email/resend";
 import { FOUNDER_WELCOME_SUBJECT, founderWelcomeEmailHtml } from "@/lib/email/templates/founder-welcome";
+import { PREMIUM_WELCOME_SUBJECT, premiumWelcomeEmailHtml } from "@/lib/email/templates/premium-welcome";
 
 // Riceve gli eventi Stripe e aggiorna lo stato Premium/Founder su
 // Supabase. Usa sempre il service client (mai quello legato alla sessione
@@ -63,6 +64,21 @@ export async function POST(req: NextRequest) {
         if (error) {
           console.error("Errore aggiornando profilo dopo checkout abbonamento:", error);
           return NextResponse.json({ error: "db_update_failed" }, { status: 500 });
+        }
+
+        // Email di benvenuto Premium — checkout.session.completed scatta
+        // solo alla prima sottoscrizione, non ai rinnovi, quindi va bene
+        // inviarla qui senza controlli aggiuntivi (vedi discussione
+        // 2026-08-27).
+        const premiumEmail = session.customer_details?.email;
+        if (premiumEmail) {
+          await sendEmail({
+            to: premiumEmail,
+            subject: PREMIUM_WELCOME_SUBJECT,
+            html: premiumWelcomeEmailHtml(),
+          });
+        } else {
+          console.warn("checkout.session.completed Premium senza customer_details.email, email di benvenuto saltata:", session.id);
         }
       } else if (session.mode === "payment") {
         // Piano Founder: pagamento singolo, nessun abbonamento ricorrente
