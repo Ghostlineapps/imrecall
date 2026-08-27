@@ -49,12 +49,19 @@ export async function POST(req: NextRequest) {
   // perché la RLS su profiles ("profiles_own", supabase/migrations/
   // 006_rls.sql) permette a ogni utente di leggere solo la propria riga,
   // non un conteggio su tutti gli utenti.
+  //
+  // Il filtro su stripe_customer_id esclude i posti Founder assegnati a
+  // mano (SQL diretto su Supabase, non tramite Stripe — vedi discussione
+  // 2026-08-27, es. l'account del founder dell'app e altri omaggi): quegli
+  // account non hanno mai un stripe_customer_id perché non passano da una
+  // Checkout Session, e non devono consumare i 50 posti a pagamento.
   if (plan === "founder") {
     const admin = createServiceClient();
     const { count } = await admin
       .from("profiles")
       .select("id", { count: "exact", head: true })
-      .eq("subscription_tier", "founder");
+      .eq("subscription_tier", "founder")
+      .not("stripe_customer_id", "is", null);
     if ((count ?? 0) >= FOUNDER_SEATS_TOTAL) {
       return NextResponse.json({ error: "founder_sold_out" }, { status: 409 });
     }
