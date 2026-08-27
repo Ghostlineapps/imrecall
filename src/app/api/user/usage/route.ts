@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import {
   FREE_MEMORIES_PER_MONTH,
   memoriesUsedThisMonth,
   transcriptionMinutesQuota,
   transcriptionMinutesUsedThisMonth,
 } from "@/lib/subscription/limits";
+import { FOUNDER_SEATS_TOTAL } from "@/lib/stripe/client";
 
 export async function GET() {
   const supabase = createClient();
@@ -23,10 +24,21 @@ export async function GET() {
   // Conteggi live, non colonne salvate: `memory_count_this_month` non
   // veniva mai incrementato da nessun codice (vedi
   // src/lib/subscription/limits.ts), quindi mostrava sempre 0 qui.
-  const [memoriesThisMonth, transcriptionMinutes] = await Promise.all([
+  //
+  // Il conteggio dei posti Founder venduti richiede il service client: la
+  // RLS su profiles ("profiles_own") permette a ogni utente di leggere
+  // solo la propria riga, non un conteggio su tutti gli utenti — vedi
+  // stessa nota in src/app/api/checkout/route.ts.
+  const admin = createServiceClient();
+  const [memoriesThisMonth, transcriptionMinutes, founderResult] = await Promise.all([
     memoriesUsedThisMonth(supabase, user.id),
     transcriptionMinutesUsedThisMonth(supabase, user.id),
+    admin
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("subscription_tier", "founder"),
   ]);
+  const founderCount: number = founderResult.count ?? 0;
 
   return NextResponse.json({
     ...profile,
@@ -34,5 +46,6 @@ export async function GET() {
     memory_limit_this_month: FREE_MEMORIES_PER_MONTH,
     transcription_minutes_this_month: Math.round(transcriptionMinutes),
     transcription_minutes_limit: transcriptionMinutesQuota(tier),
+    founder_seats_remaining: Math.max(0, FOUNDER_SEATS_TOTAL - founderCount),
   });
 }
