@@ -1,11 +1,22 @@
 import Stripe from "stripe";
 
 // Istanza condivisa del client Stripe — stessa convenzione dei client
-// Google/Microsoft in src/lib/{google,microsoft}/client.ts. Nessun
-// apiVersion fissato esplicitamente: usa quello di default dell'account
-// Stripe, evitando di doverlo tenere sincronizzato a mano con la versione
-// del pacchetto "stripe" installata.
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+// Google/Microsoft in src/lib/{google,microsoft}/client.ts.
+//
+// apiVersion fissato esplicitamente (a differenza del resto dei client
+// dell'app): senza specificarlo, il pacchetto "stripe" usa di default la
+// versione API bundlata al momento del rilascio del pacchetto (qui
+// "2024-06-20"), che sul nostro account risulta troppo vecchia — Stripe
+// rifiuta la creazione della Checkout Session con l'errore "Managed
+// Payments is not supported on API version 2024-06-20" (riscontrato in
+// produzione il 2026-08-27). Il cast "as any" serve solo ad aggirare il
+// literal type dell'apiVersion imposto dalle definizioni TypeScript del
+// pacchetto installato (che potrebbero non includere ancora questa
+// versione più recente come opzione valida) — a runtime viene comunque
+// inviata la stringa esatta indicata qui.
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-03-31.basil" as any,
+});
 
 export type PlanId = "monthly" | "annual" | "founder";
 
