@@ -1,0 +1,13 @@
+-- Aggiunge il tier "founder" (piano a vita, primi 50 sostenitori — vedi
+-- discussione 2026-08-27) al tipo esistente subscription_tier. "premium"
+-- resta il tier per gli abbonamenti mensile/annuale; "founder" è distinto
+-- solo per contare i 50 posti e mostrare il badge dedicato — nei limiti
+-- d'uso (vedi src/lib/subscription/limits.ts) qualunque tier diverso da
+-- "free" ottiene già i limiti premium, "founder" incluso, senza bisogno di
+-- toccare quel codice.
+--
+-- Nota: ALTER TYPE ... ADD VALUE non può essere usato nella stessa
+-- transazione in cui il nuovo valore viene poi letto/scritto — per questo
+-- resta isolato nella propria migrazione invece di stare insieme al codice
+-- che lo userà (route API, webhook).
+alter type subscription_tier add value if not exists 'founder';
