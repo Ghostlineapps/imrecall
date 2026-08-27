@@ -28,7 +28,9 @@ export async function GET() {
   // Il conteggio dei posti Founder venduti richiede il service client: la
   // RLS su profiles ("profiles_own") permette a ogni utente di leggere
   // solo la propria riga, non un conteggio su tutti gli utenti — vedi
-  // stessa nota in src/app/api/checkout/route.ts.
+  // stessa nota in src/app/api/checkout/route.ts. Il filtro su
+  // stripe_customer_id esclude i posti Founder assegnati a mano (SQL
+  // diretto, non tramite Stripe) dal conteggio dei 50 posti a pagamento.
   const admin = createServiceClient();
   const [memoriesThisMonth, transcriptionMinutes, founderResult] = await Promise.all([
     memoriesUsedThisMonth(supabase, user.id),
@@ -36,7 +38,8 @@ export async function GET() {
     admin
       .from("profiles")
       .select("id", { count: "exact", head: true })
-      .eq("subscription_tier", "founder"),
+      .eq("subscription_tier", "founder")
+      .not("stripe_customer_id", "is", null),
   ]);
   const founderCount: number = founderResult.count ?? 0;
 
