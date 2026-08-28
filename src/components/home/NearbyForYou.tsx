@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { MapPin, Compass, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -99,28 +100,35 @@ export function NearbyForYou() {
       };
     }
 
-    if ("permissions" in navigator) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((status) => {
-          if (cancelled) return;
-          // Permesso già concesso in modo definitivo: nessun prompt in
-          // arrivo, possiamo chiedere la posizione fresca ogni volta.
-          if (status.state === "granted") {
-            requestPosition();
-          } else {
-            requestPositionRespectingCooldown();
-          }
-        })
-        .catch(() => {
-          if (!cancelled) requestPositionRespectingCooldown();
-        });
-    } else {
-      // Browser senza Permissions API (es. Safari meno recente): meglio
-      // rispettare comunque il cooldown per non rischiare di ri-chiedere
-      // il permesso ad ogni apertura.
-      requestPositionRespectingCooldown();
-    }
+    // Dentro l'app nativa Android il vero permesso di sistema va chiesto
+    // esplicitamente tramite il plugin Capacitor — vedi nativeGeolocation.ts
+    // e la stessa nota in useLocationCheckin.ts. Su web/PWA non fa nulla.
+    ensureNativeLocationPermission().finally(() => {
+      if (cancelled) return;
+
+      if ("permissions" in navigator) {
+        navigator.permissions
+          .query({ name: "geolocation" })
+          .then((status) => {
+            if (cancelled) return;
+            // Permesso già concesso in modo definitivo: nessun prompt in
+            // arrivo, possiamo chiedere la posizione fresca ogni volta.
+            if (status.state === "granted") {
+              requestPosition();
+            } else {
+              requestPositionRespectingCooldown();
+            }
+          })
+          .catch(() => {
+            if (!cancelled) requestPositionRespectingCooldown();
+          });
+      } else {
+        // Browser senza Permissions API (es. Safari meno recente): meglio
+        // rispettare comunque il cooldown per non rischiare di ri-chiedere
+        // il permesso ad ogni apertura.
+        requestPositionRespectingCooldown();
+      }
+    });
 
     return () => {
       cancelled = true;
