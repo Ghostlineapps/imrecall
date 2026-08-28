@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
 
 // Ogni quanto ripetere il check-in di posizione. Non deve essere "ad ogni
 // apertura": su iOS, un'app aggiunta alla Home è una nuova sessione della
@@ -33,30 +34,36 @@ export function useLocationCheckin() {
     // alla prossima apertura invece che dopo il cooldown.
     const markAttempted = () => localStorage.setItem(CHECKIN_STORAGE_KEY, String(Date.now()));
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        markAttempted();
-        try {
-          await fetch("/api/checkin", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-            }),
-          });
-        } catch {
-          // silenzioso: il check-in è un miglioramento opportunistico, non
-          // deve mai bloccare l'esperienza dell'utente
-        }
-      },
-      () => {
-        // permesso negato: l'app funziona comunque, solo senza resurfacing
-        // di prossimità. Segniamo comunque il tentativo per rispettare il
-        // cooldown ed evitare di richiederlo di nuovo alla prossima apertura.
-        markAttempted();
-      },
-      { maximumAge: 1000 * 60 * 30 }
-    );
+    // Dentro l'app nativa Android, il vero permesso di sistema va chiesto
+    // esplicitamente tramite il plugin Capacitor prima di usare
+    // navigator.geolocation — vedi nativeGeolocation.ts. Su web/PWA questa
+    // chiamata non fa nulla.
+    ensureNativeLocationPermission().finally(() => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          markAttempted();
+          try {
+            await fetch("/api/checkin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              }),
+            });
+          } catch {
+            // silenzioso: il check-in è un miglioramento opportunistico, non
+            // deve mai bloccare l'esperienza dell'utente
+          }
+        },
+        () => {
+          // permesso negato: l'app funziona comunque, solo senza resurfacing
+          // di prossimità. Segniamo comunque il tentativo per rispettare il
+          // cooldown ed evitare di richiederlo di nuovo alla prossima apertura.
+          markAttempted();
+        },
+        { maximumAge: 1000 * 60 * 30 }
+      );
+    });
   }, []);
 }
