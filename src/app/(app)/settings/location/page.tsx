@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-
+import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
 const MAX_TAKEOUT_POINTS = 60000;
@@ -221,7 +221,11 @@ export default function LocationSettingsPage() {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+      // Dentro l'app nativa Android il vero permesso di sistema va chiesto
+      // esplicitamente tramite il plugin Capacitor – vedi nativeGeolocation.ts.
+      // Su web/PWA non fa nulla.
+      ensureNativeLocationPermission().finally(() => {
+      navigator.geolocation.getCurrentPosition(
       async (position) => {
         setTrackingError(null);
         try {
@@ -249,6 +253,7 @@ export default function LocationSettingsPage() {
       },
       { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 15000 }
     );
+      });
   }
 
   function toggleTracking() {
