@@ -37,6 +37,7 @@ export function ImageCapture({
   onSaved,
   isHealth = false,
   isExpense = false,
+  isPregnancy = false,
 }: {
   onSaved: () => void;
   // true quando la foto viene caricata dalla sezione Salute — marca la
@@ -48,6 +49,10 @@ export function ImageCapture({
   // scontrino (importo/negozio/categoria) funziona comunque da qualsiasi
   // foto, non solo da qui — vedi RECEIPT_DETECTED in /api/upload/image.
   isExpense?: boolean;
+  // true quando la foto viene caricata dalla sezione Gravidanza — marca la
+  // memoria come is_pregnancy (vedi migrazione 028), così compare nella
+  // lista esami/referti di quello spazio.
+  isPregnancy?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -85,6 +90,7 @@ export function ImageCapture({
       }
       if (isHealth) formData.append("is_health", "true");
       if (isExpense) formData.append("is_expense", "true");
+      if (isPregnancy) formData.append("is_pregnancy", "true");
 
       const res = await fetch("/api/upload/image", { method: "POST", body: formData });
       if (!res.ok) throw new Error("upload_failed");
