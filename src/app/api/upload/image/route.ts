@@ -123,6 +123,11 @@ export async function POST(req: NextRequest) {
   // Vedi migrazione 022 / CaptureSheet expenseMode: la sezione Spese manda
   // esplicitamente "true" quando l'utente carica uno scontrino da lì.
   const isExpense = formData.get("is_expense") === "true";
+  // Vedi migrazione 028 / CaptureSheet pregnancyMode: la sezione
+  // Gravidanza manda esplicitamente "true" per i referti/esami caricati
+  // da lì (che restano comunque visibili anche in Salute, vedi is_health
+  // sotto: sono passati entrambi insieme dalla pagina /gravidanza).
+  const isPregnancy = formData.get("is_pregnancy") === "true";
 
   if (file.size > 10 * 1024 * 1024) {
     return NextResponse.json({ error: "file_too_large", max_mb: 10 }, { status: 413 });
@@ -176,6 +181,7 @@ export async function POST(req: NextRequest) {
       memory_date: new Date().toISOString(),
       is_health: isHealth,
       is_expense: isExpense,
+      is_pregnancy: isPregnancy,
     })
     .select()
     .single();
