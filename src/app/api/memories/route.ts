@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get("type");
   const category = searchParams.get("category");
   const isHealth = searchParams.get("is_health");
+  const isPregnancy = searchParams.get("is_pregnancy");
 
   let query = supabase
     .from("memories")
@@ -80,6 +81,9 @@ export async function GET(req: NextRequest) {
   // referti/esami caricati da lì e i farmaci, senza introdurre una
   // categorizzazione visibile altrove.
   if (isHealth === "true") query = query.eq("is_health", true);
+  // Usato dalla sezione Gravidanza (vedi migrazione 028) per mostrare solo
+  // i referti/esami caricati da lì, stesso pattern di is_health sopra.
+  if (isPregnancy === "true") query = query.eq("is_pregnancy", true);
 
   const { data: memories, error } = await query;
 
