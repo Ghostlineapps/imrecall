@@ -21,14 +21,15 @@ import clsx from "clsx";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-// Offset preimpostati per i promemoria (in minuti prima dell'appuntamento).
-// La colonna reminder_minutes_before di default vale [1440, 60] (un giorno
-// prima + un'ora prima), ma prima non c'era alcun modo di cambiarla dalla UI
-// né alcun cron che la leggesse — l'utente poteva solo "sperare" di
-// ricordarsi da solo. Richiesta esplicita: poter scegliere anche un
-// promemoria più a ridosso (es. 20 minuti prima) oltre a quello del giorno
-// prima, per non arrivare in ritardo.
-const REMINDER_OPTIONS = [
+// Offset per i promemoria (in minuti prima dell'appuntamento). La colonna
+// reminder_minutes_before di default vale [1440, 60] (un giorno prima +
+// un'ora prima), ma prima non c'era alcun modo di cambiarla dalla UI né
+// alcun cron che la leggesse. Prima versione: solo 5 opzioni fisse (20 min,
+// 1h, 3h, 1gg, 2gg) — feedback dell'utente: voleva poter scegliere minuti,
+// ore e giorni liberamente, non solo quei 5 valori. Ora le opzioni sotto
+// restano come scorciatoie rapide, ma c'è anche un campo "personalizza" che
+// accetta qualsiasi numero in minuti/ore/giorni.
+const QUICK_REMINDER_OPTIONS = [
   { minutes: 20, label: "20 min prima" },
   { minutes: 60, label: "1 ora prima" },
   { minutes: 180, label: "3 ore prima" },
@@ -36,6 +37,29 @@ const REMINDER_OPTIONS = [
   { minutes: 2880, label: "2 giorni prima" },
 ];
 const DEFAULT_REMINDERS = [1440, 60];
+
+const CUSTOM_UNITS = [
+  { value: "minutes", label: "minuti prima", perMinute: 1 },
+  { value: "hours", label: "ore prima", perMinute: 60 },
+  { value: "days", label: "giorni prima", perMinute: 1440 },
+] as const;
+
+// Stessa logica (mirror) di labelForOffset() in
+// src/app/api/cron/appointments/route.ts, usata lì per il testo della
+// notifica push — qui serve per mostrare un'etichetta leggibile su ogni
+// promemoria selezionato, incluso un valore personalizzato tipo "45 min
+// prima" che non corrisponde a nessuna delle scorciatoie rapide.
+function formatReminderLabel(minutes: number): string {
+  if (minutes >= 1440 && minutes % 1440 === 0) {
+    const days = minutes / 1440;
+    return days === 1 ? "1 giorno prima" : `${days} giorni prima`;
+  }
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return hours === 1 ? "1 ora prima" : `${hours} ore prima`;
+  }
+  return `${minutes} min prima`;
+}
 
 export default function AppointmentsPage() {
   const { data, isLoading, error, mutate } = useSWR("/api/appointments", fetcher);
@@ -47,6 +71,8 @@ export default function AppointmentsPage() {
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
   const [reminders, setReminders] = useState<number[]>(DEFAULT_REMINDERS);
+  const [customAmount, setCustomAmount] = useState("");
+  const [customUnit, setCustomUnit] = useState<(typeof CUSTOM_UNITS)[number]["value"]>("minutes");
   const [saving, setSaving] = useState(false);
 
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -103,6 +129,7 @@ export default function AppointmentsPage() {
     setTime("");
     setLocation("");
     setReminders(DEFAULT_REMINDERS);
+    setCustomAmount("");
   }
 
   function openNewForm() {
@@ -116,6 +143,7 @@ export default function AppointmentsPage() {
     setTime("");
     setLocation("");
     setReminders(DEFAULT_REMINDERS);
+    setCustomAmount("");
     setShowForm(true);
   }
 
@@ -138,6 +166,15 @@ export default function AppointmentsPage() {
     setReminders((prev) =>
       prev.includes(minutes) ? prev.filter((m) => m !== minutes) : [...prev, minutes].sort((a, b) => a - b)
     );
+  }
+
+  function addCustomReminder() {
+    const amount = parseInt(customAmount, 10);
+    if (!amount || amount <= 0) return;
+    const unit = CUSTOM_UNITS.find((u) => u.value === customUnit)!;
+    const minutes = amount * unit.perMinute;
+    setReminders((prev) => (prev.includes(minutes) ? prev : [...prev, minutes].sort((a, b) => a - b)));
+    setCustomAmount("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -233,27 +270,70 @@ export default function AppointmentsPage() {
             onChange={(e) => setLocation(e.target.value)}
             className="input-field-light w-full"
           />
-          <div className="space-y-1">
+          <div className="space-y-2">
             <label className="text-xs text-celeste-muted px-1">Avvisami</label>
-            <div className="flex flex-wrap gap-1.5">
-              {REMINDER_OPTIONS.map((opt) => {
-                const active = reminders.includes(opt.minutes);
-                return (
+
+            {/* Promemoria attualmente selezionati (preimpostati o
+                personalizzati): sempre visibili come chip, toccali per
+                rimuoverli. Senza questa riga un valore personalizzato tipo
+                "45 min prima" non avrebbe modo di essere mostrato, dato che
+                non corrisponde a nessuna delle scorciatoie qui sotto. */}
+            {reminders.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {reminders.map((m) => (
                   <button
-                    key={opt.minutes}
+                    key={m}
                     type="button"
-                    onClick={() => toggleReminder(opt.minutes)}
-                    className={clsx(
-                      "text-xs px-3 py-1.5 rounded-full border transition-colors",
-                      active
-                        ? "bg-celeste-accentDark border-celeste-accentDark text-white"
-                        : "border-celeste-navy/15 text-celeste-muted hover:border-celeste-accentDark/50"
-                    )}
+                    onClick={() => toggleReminder(m)}
+                    className="text-xs pl-3 pr-2 py-1.5 rounded-full bg-celeste-accentDark text-white flex items-center gap-1.5"
                   >
-                    {opt.label}
+                    {formatReminderLabel(m)}
+                    <span aria-hidden="true">×</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_REMINDER_OPTIONS.filter((opt) => !reminders.includes(opt.minutes)).map((opt) => (
+                <button
+                  key={opt.minutes}
+                  type="button"
+                  onClick={() => toggleReminder(opt.minutes)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-celeste-navy/15 text-celeste-muted hover:border-celeste-accentDark/50 transition-colors"
+                >
+                  + {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-1.5">
+              <input
+                type="number"
+                min={1}
+                placeholder="Numero"
+                value={customAmount}
+                onChange={(e) => setCustomAmount(e.target.value)}
+                className="input-field-light w-20 text-sm"
+              />
+              <select
+                value={customUnit}
+                onChange={(e) => setCustomUnit(e.target.value as (typeof CUSTOM_UNITS)[number]["value"])}
+                className="input-field-light text-sm flex-1"
+              >
+                {CUSTOM_UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addCustomReminder}
+                className="text-xs px-3 rounded-full bg-celeste-navy/10 text-celeste-navy hover:bg-celeste-navy/15 transition-colors whitespace-nowrap"
+              >
+                Aggiungi
+              </button>
             </div>
           </div>
           <div className="flex gap-2">
