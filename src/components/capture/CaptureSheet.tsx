@@ -30,6 +30,10 @@ export function CaptureSheet({
   // foto caricate da qui vengono marcate is_expense=true e passano dalla
   // lettura automatica dello scontrino (vedi /api/upload/image).
   expenseMode = false,
+  // Modalità "Gravidanza" (vedi sezione Gravidanza in Dashboard, migrazione
+  // 028): le foto e i file caricati da qui vengono marcati is_pregnancy=true,
+  // così compaiono negli "Esami di laboratorio" di quello spazio.
+  pregnancyMode = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,6 +41,7 @@ export function CaptureSheet({
   allowedTabs?: Tab[];
   healthMode?: boolean;
   expenseMode?: boolean;
+  pregnancyMode?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const tabs = allowedTabs ?? ALL_TABS;
@@ -88,8 +93,10 @@ export function CaptureSheet({
         {tab === "text" && <TextCapture onSaved={onClose} />}
         {tab === "audio" && <AudioRecorder onSaved={onClose} />}
         {tab === "meeting" && <MeetingRecorder onSaved={onClose} />}
-        {tab === "image" && <ImageCapture onSaved={onClose} isHealth={healthMode} isExpense={expenseMode} />}
-        {tab === "document" && <DocumentCapture onSaved={onClose} isHealth={healthMode} />}
+        {tab === "image" && (
+          <ImageCapture onSaved={onClose} isHealth={healthMode} isExpense={expenseMode} isPregnancy={pregnancyMode} />
+        )}
+        {tab === "document" && <DocumentCapture onSaved={onClose} isHealth={healthMode} isPregnancy={pregnancyMode} />}
         {tab === "medication" && <MedicationCapture onSaved={onClose} />}
         {tab === "expense" && <ExpenseCapture onSaved={onClose} />}
         {tab === "link" && <LinkCapture onSaved={onClose} />}
