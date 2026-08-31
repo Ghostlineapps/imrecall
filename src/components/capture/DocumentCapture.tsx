@@ -15,12 +15,16 @@ const ACCEPTED =
 export function DocumentCapture({
   onSaved,
   isHealth = false,
+  isPregnancy = false,
 }: {
   onSaved: () => void;
   // true quando il file viene caricato dalla sezione Salute — marca la
   // memoria come is_health così compare nella lista referti/esami (vedi
   // migrazione 020), senza alcun effetto su categorie o ricerca generica.
   isHealth?: boolean;
+  // true quando il file viene caricato dalla sezione Gravidanza — marca la
+  // memoria come is_pregnancy (vedi migrazione 028).
+  isPregnancy?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -38,6 +42,7 @@ export function DocumentCapture({
       const formData = new FormData();
       formData.append("file", file, file.name);
       if (isHealth) formData.append("is_health", "true");
+      if (isPregnancy) formData.append("is_pregnancy", "true");
 
       const res = await fetch("/api/upload/document", { method: "POST", body: formData });
 
