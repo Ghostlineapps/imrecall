@@ -124,6 +124,8 @@ export async function POST(req: NextRequest) {
   // Vedi migrazione 020 / CaptureSheet healthMode: la sezione Salute manda
   // esplicitamente "true" quando l'utente carica un referto da lì.
   const isHealth = formData.get("is_health") === "true";
+  // Vedi migrazione 028 / CaptureSheet pregnancyMode.
+  const isPregnancy = formData.get("is_pregnancy") === "true";
 
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json({ error: "file_too_large", max_mb: MAX_FILE_BYTES / (1024 * 1024) }, { status: 413 });
@@ -186,6 +188,7 @@ export async function POST(req: NextRequest) {
       media_size: buffer.length,
       memory_date: new Date().toISOString(),
       is_health: isHealth,
+      is_pregnancy: isPregnancy,
     })
     .select()
     .single();
