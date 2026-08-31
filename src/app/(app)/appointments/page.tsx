@@ -38,11 +38,20 @@ const QUICK_REMINDER_OPTIONS = [
 ];
 const DEFAULT_REMINDERS = [1440, 60];
 
+// 2026-08-31: prima versione aveva un solo campo numero + un menu a tendina
+// per scegliere l'unità + un tasto "Aggiungi" — tre passaggi separati per un
+// solo promemoria personalizzato. Feedback dell'utente: voleva poter
+// toccare direttamente "Minuti", "Ore" o "Giorni" e scegliere subito il
+// numero lì, senza passare da un menu a tendina condiviso. Ora sono tre
+// caselline indipendenti, una per unità, ciascuna con il proprio numero e il
+// proprio tasto per aggiungere.
 const CUSTOM_UNITS = [
-  { value: "minutes", label: "minuti prima", perMinute: 1 },
-  { value: "hours", label: "ore prima", perMinute: 60 },
-  { value: "days", label: "giorni prima", perMinute: 1440 },
+  { value: "minutes", shortLabel: "Minuti", perMinute: 1 },
+  { value: "hours", shortLabel: "Ore", perMinute: 60 },
+  { value: "days", shortLabel: "Giorni", perMinute: 1440 },
 ] as const;
+
+type CustomUnitValue = (typeof CUSTOM_UNITS)[number]["value"];
 
 // Stessa logica (mirror) di labelForOffset() in
 // src/app/api/cron/appointments/route.ts, usata lì per il testo della
@@ -71,8 +80,11 @@ export default function AppointmentsPage() {
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
   const [reminders, setReminders] = useState<number[]>(DEFAULT_REMINDERS);
-  const [customAmount, setCustomAmount] = useState("");
-  const [customUnit, setCustomUnit] = useState<(typeof CUSTOM_UNITS)[number]["value"]>("minutes");
+  const [customAmounts, setCustomAmounts] = useState<Record<CustomUnitValue, string>>({
+    minutes: "",
+    hours: "",
+    days: "",
+  });
   const [saving, setSaving] = useState(false);
 
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -129,7 +141,7 @@ export default function AppointmentsPage() {
     setTime("");
     setLocation("");
     setReminders(DEFAULT_REMINDERS);
-    setCustomAmount("");
+    setCustomAmounts({ minutes: "", hours: "", days: "" });
   }
 
   function openNewForm() {
@@ -143,7 +155,7 @@ export default function AppointmentsPage() {
     setTime("");
     setLocation("");
     setReminders(DEFAULT_REMINDERS);
-    setCustomAmount("");
+    setCustomAmounts({ minutes: "", hours: "", days: "" });
     setShowForm(true);
   }
 
@@ -168,13 +180,13 @@ export default function AppointmentsPage() {
     );
   }
 
-  function addCustomReminder() {
-    const amount = parseInt(customAmount, 10);
+  function addCustomReminder(unitValue: CustomUnitValue) {
+    const amount = parseInt(customAmounts[unitValue], 10);
     if (!amount || amount <= 0) return;
-    const unit = CUSTOM_UNITS.find((u) => u.value === customUnit)!;
+    const unit = CUSTOM_UNITS.find((u) => u.value === unitValue)!;
     const minutes = amount * unit.perMinute;
     setReminders((prev) => (prev.includes(minutes) ? prev : [...prev, minutes].sort((a, b) => a - b)));
-    setCustomAmount("");
+    setCustomAmounts((prev) => ({ ...prev, [unitValue]: "" }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -307,33 +319,42 @@ export default function AppointmentsPage() {
               ))}
             </div>
 
-            <div className="flex gap-1.5">
-              <input
-                type="number"
-                min={1}
-                placeholder="Numero"
-                value={customAmount}
-                onChange={(e) => setCustomAmount(e.target.value)}
-                className="input-field-light w-20 text-sm"
-              />
-              <select
-                value={customUnit}
-                onChange={(e) => setCustomUnit(e.target.value as (typeof CUSTOM_UNITS)[number]["value"])}
-                className="input-field-light text-sm flex-1"
-              >
-                {CUSTOM_UNITS.map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={addCustomReminder}
-                className="text-xs px-3 rounded-full bg-celeste-navy/10 text-celeste-navy hover:bg-celeste-navy/15 transition-colors whitespace-nowrap"
-              >
-                Aggiungi
-              </button>
+            {/* Una casellina indipendente per unità (Minuti / Ore /
+                Giorni): tocchi direttamente quella che ti serve e scrivi il
+                numero lì, invece di dover prima scegliere l'unità da un
+                menu a tendina condiviso e poi digitare il numero altrove. */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {CUSTOM_UNITS.map((u) => (
+                <div key={u.value} className="space-y-1">
+                  <label className="text-[11px] text-celeste-muted px-1">{u.shortLabel}</label>
+                  <div className="flex gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      value={customAmounts[u.value]}
+                      onChange={(e) =>
+                        setCustomAmounts((prev) => ({ ...prev, [u.value]: e.target.value }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomReminder(u.value);
+                        }
+                      }}
+                      className="input-field-light w-full text-sm text-center px-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addCustomReminder(u.value)}
+                      aria-label={`Aggiungi promemoria in ${u.shortLabel.toLowerCase()}`}
+                      className="shrink-0 w-8 rounded-lg bg-celeste-navy/10 text-celeste-navy hover:bg-celeste-navy/15 transition-colors flex items-center justify-center"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
           <div className="flex gap-2">
