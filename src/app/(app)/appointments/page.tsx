@@ -21,6 +21,22 @@ import clsx from "clsx";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+// Offset preimpostati per i promemoria (in minuti prima dell'appuntamento).
+// La colonna reminder_minutes_before di default vale [1440, 60] (un giorno
+// prima + un'ora prima), ma prima non c'era alcun modo di cambiarla dalla UI
+// né alcun cron che la leggesse — l'utente poteva solo "sperare" di
+// ricordarsi da solo. Richiesta esplicita: poter scegliere anche un
+// promemoria più a ridosso (es. 20 minuti prima) oltre a quello del giorno
+// prima, per non arrivare in ritardo.
+const REMINDER_OPTIONS = [
+  { minutes: 20, label: "20 min prima" },
+  { minutes: 60, label: "1 ora prima" },
+  { minutes: 180, label: "3 ore prima" },
+  { minutes: 1440, label: "Il giorno prima" },
+  { minutes: 2880, label: "2 giorni prima" },
+];
+const DEFAULT_REMINDERS = [1440, 60];
+
 export default function AppointmentsPage() {
   const { data, isLoading, error, mutate } = useSWR("/api/appointments", fetcher);
 
@@ -30,6 +46,7 @@ export default function AppointmentsPage() {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
+  const [reminders, setReminders] = useState<number[]>(DEFAULT_REMINDERS);
   const [saving, setSaving] = useState(false);
 
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -85,6 +102,7 @@ export default function AppointmentsPage() {
     setDate("");
     setTime("");
     setLocation("");
+    setReminders(DEFAULT_REMINDERS);
   }
 
   function openNewForm() {
@@ -97,6 +115,7 @@ export default function AppointmentsPage() {
     setDate("");
     setTime("");
     setLocation("");
+    setReminders(DEFAULT_REMINDERS);
     setShowForm(true);
   }
 
@@ -107,7 +126,18 @@ export default function AppointmentsPage() {
     setDate(format(when, "yyyy-MM-dd"));
     setTime(format(when, "HH:mm"));
     setLocation(a.location ?? "");
+    setReminders(
+      Array.isArray(a.reminder_minutes_before) && a.reminder_minutes_before.length > 0
+        ? a.reminder_minutes_before
+        : DEFAULT_REMINDERS
+    );
     setShowForm(true);
+  }
+
+  function toggleReminder(minutes: number) {
+    setReminders((prev) =>
+      prev.includes(minutes) ? prev.filter((m) => m !== minutes) : [...prev, minutes].sort((a, b) => a - b)
+    );
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -117,7 +147,12 @@ export default function AppointmentsPage() {
     setSaving(true);
     try {
       const appointment_at = new Date(`${date}T${time}:00`).toISOString();
-      const payload = { title, appointment_at, location: location || null };
+      const payload = {
+        title,
+        appointment_at,
+        location: location || null,
+        reminder_minutes_before: reminders,
+      };
 
       if (editingId) {
         await fetch(`/api/appointments/${editingId}`, {
@@ -198,6 +233,29 @@ export default function AppointmentsPage() {
             onChange={(e) => setLocation(e.target.value)}
             className="input-field-light w-full"
           />
+          <div className="space-y-1">
+            <label className="text-xs text-celeste-muted px-1">Avvisami</label>
+            <div className="flex flex-wrap gap-1.5">
+              {REMINDER_OPTIONS.map((opt) => {
+                const active = reminders.includes(opt.minutes);
+                return (
+                  <button
+                    key={opt.minutes}
+                    type="button"
+                    onClick={() => toggleReminder(opt.minutes)}
+                    className={clsx(
+                      "text-xs px-3 py-1.5 rounded-full border transition-colors",
+                      active
+                        ? "bg-celeste-accentDark border-celeste-accentDark text-white"
+                        : "border-celeste-navy/15 text-celeste-muted hover:border-celeste-accentDark/50"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="btn-primary-light flex-1">
               {saving ? "Salvataggio…" : editingId ? "Salva modifiche" : "Aggiungi appuntamento"}
