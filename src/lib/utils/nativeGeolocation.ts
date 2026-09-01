@@ -56,91 +56,50 @@ interface NativeBridgePlugin {
 }
 
 let cachedBridge: NativeBridgePlugin | null = null;
-let inFlightBridge: Promise<NativeBridgePlugin | null> | null = null;
-
-// Diagnostica temporanea (2026-09-01, round 2): dopo aver tolto la cache
-// permanente del fallimento (vedi sotto), sul telefono di test
-// getNativeDebugInfo() continua a mostrare "nativo:true plugin:true
-// errore:-" mentre isNativeTrackingAvailable()/getNativeBridge() qui sotto
-// continuano a comportarsi come se non fossero mai riusciti — pur essendo
-// le due funzioni logicamente identiche (stesso import, stesso
-// isNativePlatform, stesso registerPlugin). Finché non capiamo perché
-// divergono, teniamo traccia dell'ultimo motivo di fallimento visto QUI
-// (non in getNativeDebugInfo), per poterlo mostrare nella UI invece di
-// continuare a indovinare alla cieca. Da rimuovere una volta trovata la causa.
+// Diagnostica temporanea (2026-09-01, round 4): round 2 aveva scoperto che
+// getNativeDebugInfo() (piu' sotto) funziona sempre, mentre getNativeBridge()
+// qui sotto - pur facendo esattamente le stesse chiamate (stesso import,
+// stesso isNativePlatform, stesso registerPlugin) - non rispondeva mai sul
+// telefono di test, nemmeno il timeout di sicurezza aggiunto in round 3
+// (Promise.race con setTimeout(3000ms)) scattava mai. L'unica differenza
+// strutturale tra le due funzioni era proprio quella impalcatura extra
+// (Promise.race, Symbol, cache condivisa tra chiamate in corso). Qui la
+// togliamo e rendiamo getNativeBridge() strutturalmente identica alla
+// funzione che ha sempre funzionato, per isolare se il problema era li'.
 let lastBridgeFailureReason: string | null = null;
 
 export function getLastBridgeFailureReason(): string | null {
-    return lastBridgeFailureReason;
+      return lastBridgeFailureReason;
 }
 
 // Caricato pigramente e solo su piattaforma nativa: su web @capacitor/core
-// è comunque nel bundle (dipendenza condivisa), ma non c'è alcun plugin
-// nativo "NativeBridge" registrato, quindi ogni chiamata fallirebbe — per
-// questo ogni funzione sotto è avvolta in try/catch e degrada a no-op.
-//
-// BUG CORRETTO (2026-09-01): qui prima si metteva in cache una Promise
-// creata al PRIMO utilizzo, memorizzando per sempre il suo risultato —
-// compreso un eventuale "null" se Capacitor.isNativePlatform() risultava
-// false in quel primo istante (es. una minima corsa all'avvio, più
-// probabile caricando contenuto remoto via server.url invece di asset
-// locali impacchettati). Una volta memorizzato "null", TUTTE le funzioni
-// sotto (avvio tracciamento, permessi, diagnostica) restavano bloccate sul
-// vecchio tracciamento da browser per l'intera sessione della pagina, anche
-// se Capacitor diventava disponibile un istante dopo — combaciando esattamente
-// coi sintomi osservati (nessuna notifica, nessun servizio avviato, "impossibile
-// ottenere la posizione"), mentre un controllo diagnostico separato e non
-// in cache (getNativeDebugInfo) risultava correttamente "nativo:true". Ora
-// mettiamo in cache solo un successo: un fallimento non blocca i tentativi
-// successivi.
+// e' comunque nel bundle (dipendenza condivisa), ma non c'e' alcun plugin
+// nativo "NativeBridge" registrato, quindi ogni chiamata fallirebbe - per
+// questo ogni funzione sotto e' avvolta in try/catch e degrada a no-op.
+// Mettiamo in cache solo un successo: un fallimento non blocca i tentativi
+// successivi (vedi round 1, sopra nella storia dei commit).
 async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
-    if (cachedBridge) return cachedBridge;
+      if (cachedBridge) return cachedBridge;
 
-    // 2026-09-01, round 3: trovata la causa reale del blocco infinito — questa
-    // funzione veniva chiamata quasi nello stesso istante da due punti diversi
-    // (il layout dell'app tramite useNativeSessionBridge, e questa pagina),
-    // entrambi con cachedBridge ancora vuoto: ognuno ripartiva da zero con un
-    // proprio "await import(...)" invece di condividere lo stesso tentativo.
-    // Ora una seconda chiamata mentre la prima è ancora in corso aspetta lo
-    // stesso risultato invece di ripartire. Aggiunto anche un timeout di
-    // sicurezza: se anche questo dovesse un giorno bloccarsi, la funzione
-    // fallisce dopo pochi secondi invece di restare bloccata per sempre.
-    if (inFlightBridge) return inFlightBridge;
-
-    inFlightBridge = (async (): Promise<NativeBridgePlugin | null> => {
-        try {
-            const timeoutMarker = Symbol("timeout");
-            const timeout = new Promise<typeof timeoutMarker>((resolve) => {
-                setTimeout(() => resolve(timeoutMarker), 3000);
-            });
-            const result = await Promise.race([import("@capacitor/core"), timeout]);
-            if (result === timeoutMarker) {
-                lastBridgeFailureReason = "timeout: import(\"@capacitor/core\") non ha risposto entro 3s";
-                return null;
-            }
-            const core = result as typeof import("@capacitor/core");
-            if (!core.Capacitor.isNativePlatform()) {
-                lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
-                return null;
-            }
-            const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-            if (!plugin) {
-                lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
-                return null;
-            }
-            cachedBridge = plugin;
-            lastBridgeFailureReason = null;
-            return plugin;
-        } catch (err) {
-            lastBridgeFailureReason =
-                "eccezione: " + (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-            return null;
-        } finally {
-            inFlightBridge = null;
-        }
-    })();
-
-    return inFlightBridge;
+      try {
+              const core = await import("@capacitor/core");
+              if (!core.Capacitor.isNativePlatform()) {
+                        lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
+                        return null;
+              }
+              const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+              if (!plugin) {
+                        lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
+                        return null;
+              }
+              cachedBridge = plugin;
+              lastBridgeFailureReason = null;
+              return plugin;
+      } catch (err) {
+              lastBridgeFailureReason =
+                        "eccezione: " + (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+              return null;
+      }
 }
 
 /**
