@@ -571,6 +571,8 @@ export default function LocationSettingsPage() {
 
       <h1 className="text-xl font-semibold">Spostamenti</h1>
 
+      <p className="text-xs font-bold text-urgent">Versione pagina: 2026-09-01 18:47 UTC</p>
+
       <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Importa da Google Maps</p>
