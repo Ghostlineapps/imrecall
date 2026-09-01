@@ -245,7 +245,7 @@ export default function LocationSettingsPage() {
   useEffect(() => {
     getNativeDebugInfo().then((info) =>
       setNativeDebug(
-        `import:${info.importOk} nativo:${info.isNative} piattaforma:${info.platform ?? "-"} plugin:${info.pluginRegistered} errore:${info.error ?? "-"}`
+                `import:${info.importOk} nativo:${info.isNative} piattaforma:${info.platform ?? "-"} plugin:${info.pluginRegistered} build:${info.buildTag} errore:${info.error ?? "-"}`
       )
     );
   }, []);
