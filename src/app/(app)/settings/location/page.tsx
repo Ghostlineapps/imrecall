@@ -5,6 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import {
   ensureNativeLocationPermission,
+  getNativeDebugInfo,
   isNativeTrackingAvailable,
   requestBackgroundLocationPermission,
   startNativeTracking,
@@ -200,6 +201,19 @@ export default function LocationSettingsPage() {
 
   useEffect(() => {
     isNativeTrackingAvailable().then(setNativeAvailable);
+  }, []);
+
+  // Diagnostica temporanea (vedi nativeGeolocation.ts): mostra perché
+  // l'app pensa o non pensa di essere dentro il guscio nativo Android,
+  // invece di dedurlo alla cieca da isNativeTrackingAvailable() che
+  // nasconde ogni dettaglio dietro un semplice true/false.
+  const [nativeDebug, setNativeDebug] = useState<string | null>(null);
+  useEffect(() => {
+    getNativeDebugInfo().then((info) =>
+      setNativeDebug(
+        `import:${info.importOk} nativo:${info.isNative} piattaforma:${info.platform ?? "-"} plugin:${info.pluginRegistered} errore:${info.error ?? "-"}`
+      )
+    );
   }, []);
 
   const { data: locationsData } = useSWR("/api/locations?limit=50", fetcher);
@@ -573,6 +587,7 @@ export default function LocationSettingsPage() {
           <p className="text-sm text-celeste-muted">Ultima posizione salvata alle {lastPing}</p>
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
+        {nativeDebug && <p className="text-[10px] text-celeste-muted/60 break-all mt-1">{nativeDebug}</p>}
       </div>
 
       <div className="card-light space-y-3">
