@@ -216,24 +216,16 @@ export default function LocationSettingsPage() {
     const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
     useEffect(() => {
       setBridgeCheckLog((prev) => [...prev, "effect:avviato"]);
-      const check = async (label: string) => {
-        try {
-          const core = await import("@capacitor/core");
-          const isNative = core.Capacitor.isNativePlatform();
-          let pluginOk = false;
-          try {
-            const plugin = core.registerPlugin("NativeBridge");
-            pluginOk = !!plugin;
-          } catch {
-            pluginOk = false;
-          }
-          const entry = `${label}:diretto(nativo=${isNative},plugin=${pluginOk})`;
-          setBridgeCheckLog((prev) => [...prev, entry]);
-          if (isNative && pluginOk) setNativeAvailable(true);
-        } catch (err) {
-          setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        }
-      };
+    const check = async (label: string) => {
+  try {
+    const v = await isNativeTrackingAvailable();
+    const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
+    setBridgeCheckLog((prev) => [...prev, entry]);
+    if (v) setNativeAvailable(true);
+  } catch (err) {
+    setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
+  }
+};
       check("t0");
       const t1 = setTimeout(() => check("t500"), 500);
       const t2 = setTimeout(() => check("t1500"), 1500);
