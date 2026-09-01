@@ -119,6 +119,34 @@ export async function isNativeTrackingAvailableDirect(): Promise<string> {
     }
 }
 
+// Diagnostica temporanea (round 6): stessa identica struttura di
+// getNativeBridge()/isNativeTrackingAvailable() (cache a livello di modulo
+// + early return + wrapper a due livelli), ma sotto nomi mai usati prima e
+// mai chiamati da pushSupabaseSession o da nessun altro punto del codice.
+// Se ANCHE questa si blocca sul telefono, il problema e' il pattern in se'.
+// Se invece funziona, il problema e' specifico dei binding esistenti
+// cachedBridge/getNativeBridge/isNativeTrackingAvailable.
+let cachedBridge2: NativeBridgePlugin | null = null;
+
+async function getNativeBridge2(): Promise<NativeBridgePlugin | null> {
+    if (cachedBridge2) return cachedBridge2;
+
+    try {
+        const core = await import("@capacitor/core");
+        if (!core.Capacitor.isNativePlatform()) return null;
+        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+        if (!plugin) return null;
+        cachedBridge2 = plugin;
+        return plugin;
+    } catch {
+        return null;
+    }
+}
+
+export async function isNativeTrackingAvailable2(): Promise<boolean> {
+    return (await getNativeBridge2()) !== null;
+}
+
 /**
  * Da chiamare dopo login e dopo ogni refresh automatico della sessione
   * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
