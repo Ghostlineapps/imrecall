@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { reverseGeocode } from "@/lib/utils/geocoding";
 
 /**
@@ -17,8 +17,10 @@ import { reverseGeocode } from "@/lib/utils/geocoding";
  *   ci torno un anno dopo e l'app me lo ricorda".
  */
 export async function POST(req: NextRequest) {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // Bearer token oltre ai cookie: il geofencing nativo Android chiama
+  // questo stesso endpoint da un servizio in background, senza WebView —
+  // vedi getAuthenticatedUser in lib/supabase/server.ts.
+  const { supabase, user } = await getAuthenticatedUser(req);
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { latitude, longitude } = await req.json();
@@ -103,5 +105,14 @@ export async function POST(req: NextRequest) {
     await supabase.from("resurface_candidates").insert(toInsert);
   }
 
-  return NextResponse.json({ candidates_created: toInsert.length });
+  // Titolo/testo dei candidati appena creati (i più rilevanti, max 3): il
+  // ricevitore del geofence nativo li usa per mostrare subito una notifica
+  // locale, senza bisogno di un canale push separato per l'arrivo sul posto.
+  const candidates = toInsert
+  .slice()
+  .sort((a, b) => b.priority_score - a.priority_score)
+  .slice(0, 3)
+  .map(({ title, body }) => ({ title, body }));
+
+  return NextResponse.json({ candidates_created: toInsert.length, candidates });
 }
