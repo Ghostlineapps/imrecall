@@ -215,7 +215,7 @@ export default function LocationSettingsPage() {
     // rimuovere una volta trovata la causa.
     const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
     useEffect(() => {
-      setBridgeCheckLog((prev) => [...prev, "effect:avviato"]);
+      setBridgeCheckLog((prev) => [...prev, "effect:avviato(v4)"]);
     const check = async (label: string) => {
   try {
     const v = await isNativeTrackingAvailable();
