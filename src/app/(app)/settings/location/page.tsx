@@ -5,7 +5,8 @@ import Link from "next/link";
 import useSWR from "swr";
 import {
   ensureNativeLocationPermission,
-  getNativeDebugInfo,
+  getLastBridgeFailureReason,
+    getNativeDebugInfo,
   getTrackingServiceDebugInfo,
   isNativeTrackingAvailable,
   requestBackgroundLocationPermission,
@@ -205,18 +206,34 @@ export default function LocationSettingsPage() {
   // di volte a distanza ravvicinata come rete di sicurezza, nel caso ci sia
   // davvero un minimo ritardo di Capacitor all'avvio — così questo stato non
   // resta bloccato su false per tutta la sessione della pagina.
-  useEffect(() => {
-    let cancelled = false;
-    const check = () => isNativeTrackingAvailable().then((v) => !cancelled && v && setNativeAvailable(true));
-    check();
-    const t1 = setTimeout(check, 500);
-    const t2 = setTimeout(check, 1500);
-    return () => {
-      cancelled = true;
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, []);
+// Diagnostica temporanea (2026-09-01, round 2): sul telefono di test
+    // questo controllo continua a fallire anche quando getNativeDebugInfo()
+    // (sotto) mostra "nativo:true plugin:true" nello stesso istante, pur
+    // essendo logicamente la stessa identica catena di chiamate — registriamo
+    // qui ogni tentativo (riuscito o no, col motivo esatto del fallimento) per
+    // vederlo finalmente nella UI invece di continuare a indovinare. Da
+    // rimuovere una volta trovata la causa.
+    const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
+    useEffect(() => {
+          let cancelled = false;
+          const check = async (label: string) => {
+                  const v = await isNativeTrackingAvailable();
+                  if (cancelled) return;
+                  const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
+                  setBridgeCheckLog((prev) => [...prev, entry]);
+                  if (v) setNativeAvailable(true);
+          };
+          check("t0");
+          const t1 = setTimeout(() => check("t500"), 500);
+          const t2 = setTimeout(() => check("t1500"), 1500);
+          const t3 = setTimeout(() => check("t4000"), 4000);
+          return () => {
+                  cancelled = true;
+                  clearTimeout(t1);
+                  clearTimeout(t2);
+                  clearTimeout(t3);
+          };
+    }, []);
 
   // Diagnostica temporanea (vedi nativeGeolocation.ts): mostra perché
   // l'app pensa o non pensa di essere dentro il guscio nativo Android,
@@ -625,7 +642,10 @@ export default function LocationSettingsPage() {
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
         {nativeDebug && <p className="text-[10px] text-celeste-muted/60 break-all mt-1">{nativeDebug}</p>}
-        {serviceDebug && <p className="text-[10px] text-celeste-muted/60 break-all">{serviceDebug}</p>}
+        {bridgeCheckLog.length > 0 && (
+                  <p className="text-[10px] text-celeste-muted/60 break-all">{bridgeCheckLog.join(" | ")}</p>
+                )}
+               {serviceDebug && <p className="text-[10px] text-celeste-muted/60 break-all">{serviceDebug}</p>}
         {nativeAvailable && (
           <button onClick={refreshTrackingDebug} className="text-[10px] underline text-celeste-muted/60">
             Aggiorna diagnostica
