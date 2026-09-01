@@ -13,20 +13,20 @@
 let requested = false;
 
 export async function ensureNativeLocationPermission(): Promise<void> {
-    if (requested) return;
-    requested = true;
+  if (requested) return;
+  requested = true;
 
-    try {
-        const core = await import("@capacitor/core");
-        if (!core.Capacitor.isNativePlatform()) return;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return;
 
-        const geoModule = await import("@capacitor/geolocation");
-        await geoModule.Geolocation.requestPermissions();
-    } catch {
-          // Se il modulo non è disponibile (build web, non nativa) o la richiesta
-          // fallisce, non blocchiamo nulla: le chiamate a navigator.geolocation
-          // che seguono gestiscono già da sole il caso "permesso negato".
-    }
+    const geoModule = await import("@capacitor/geolocation");
+    await geoModule.Geolocation.requestPermissions();
+  } catch {
+    // Se il modulo non è disponibile (build web, non nativa) o la richiesta
+    // fallisce, non blocchiamo nulla: le chiamate a navigator.geolocation
+    // che seguono gestiscono già da sole il caso "permesso negato".
+  }
 }
 
 // --- Ponte verso il plugin nativo "NativeBridge" (geofencing + tracking) ---
@@ -38,324 +38,207 @@ export async function ensureNativeLocationPermission(): Promise<void> {
 // MainActivity.java. Questo modulo espone quel plugin al resto del codice
 // web con le stesse garanzie di nativeGeolocation: su web/PWA (non nativo)
 // tutte le funzioni sono no-op sicuri.
+//
+// 2026-09-01: dopo una lunga sessione di debug (8 round, vedi cronologia
+// commit) e' emerso che sul dispositivo di test una funzione che "aspetta"
+// il risultato di un'altra funzione (anche solo isNativeTrackingAvailable()
+// che chiama await getNativeBridge()) non si risolve MAI, mentre la stessa
+// identica logica scritta dentro un'unica funzione funziona sempre — anche
+// scrivendo la seconda funzione con .then() invece di async/await. Per
+// questo ogni funzione qui sotto risolve il plugin per conto proprio,
+// invece di delegare a un helper condiviso: un po' di codice ripetuto, ma
+// dimostrato affidabile sul dispositivo di test. Se in futuro si vuole
+// ridurre la duplicazione con un helper condiviso, testarlo con cura su un
+// dispositivo Android reale prima di tornare a quello schema.
 
 interface NativeBridgePlugin {
-    setSession(options: {
-          accessToken: string;
-          refreshToken: string;
-          expiresAt: number;
-          supabaseUrl: string;
-          supabaseAnonKey: string;
-    }): Promise<void>;
-    clearSession(): Promise<void>;
-    requestBackgroundLocationPermission(): Promise<{ granted: boolean }>;
-    startTracking(): Promise<void>;
-    stopTracking(): Promise<void>;
-    requestMicrophonePermission(): Promise<{ granted: boolean }>;
-    getTrackingDebugState(): Promise<{ running: boolean; lastError: string | null; lastStartAt: number }>;
-}
-
-let cachedBridge: NativeBridgePlugin | null = null;
-// Diagnostica temporanea (2026-09-01, round 4): round 2 aveva scoperto che
-// getNativeDebugInfo() (piu' sotto) funziona sempre, mentre getNativeBridge()
-// qui sotto - pur facendo esattamente le stesse chiamate (stesso import,
-// stesso isNativePlatform, stesso registerPlugin) - non rispondeva mai sul
-// telefono di test, nemmeno il timeout di sicurezza aggiunto in round 3
-// (Promise.race con setTimeout(3000ms)) scattava mai. L'unica differenza
-// strutturale tra le due funzioni era proprio quella impalcatura extra
-// (Promise.race, Symbol, cache condivisa tra chiamate in corso). Qui la
-// togliamo e rendiamo getNativeBridge() strutturalmente identica alla
-// funzione che ha sempre funzionato, per isolare se il problema era li'.
-let lastBridgeFailureReason: string | null = null;
-
-export function getLastBridgeFailureReason(): string | null {
-      return lastBridgeFailureReason;
-}
-
-// Caricato pigramente e solo su piattaforma nativa: su web @capacitor/core
-// e' comunque nel bundle (dipendenza condivisa), ma non c'e' alcun plugin
-// nativo "NativeBridge" registrato, quindi ogni chiamata fallirebbe - per
-// questo ogni funzione sotto e' avvolta in try/catch e degrada a no-op.
-// Mettiamo in cache solo un successo: un fallimento non blocca i tentativi
-// successivi (vedi round 1, sopra nella storia dei commit).
-async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
-      if (cachedBridge) return cachedBridge;
-
-      try {
-              const core = await import("@capacitor/core");
-              if (!core.Capacitor.isNativePlatform()) {
-                        lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
-                        return null;
-              }
-              const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-              if (!plugin) {
-                        lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
-                        return null;
-              }
-              cachedBridge = plugin;
-              lastBridgeFailureReason = null;
-              return plugin;
-      } catch (err) {
-              lastBridgeFailureReason =
-                        "eccezione: " + (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-              return null;
-      }
-}
-
-// Diagnostica temporanea (round 5): come checkInline in page.tsx (che ha
-// sempre funzionato), ma vive qui in nativeGeolocation.ts e non tocca
-// affatto cachedBridge/lastBridgeFailureReason. Se questa funziona mentre
-// isNativeTrackingAvailable() no, il problema e' proprio quella variabile
-// condivisa (letta/scritta anche da pushSupabaseSession chiamata dal
-// layout su ogni pagina), non il fatto di stare in questo file.
-export async function isNativeTrackingAvailableDirect(): Promise<string> {
-    try {
-        const core = await import("@capacitor/core");
-        const isNative = core.Capacitor.isNativePlatform();
-        const plugin = isNative ? core.registerPlugin<NativeBridgePlugin>("NativeBridge") : null;
-        return `diretto(nativo=${isNative},plugin=${!!plugin})`;
-    } catch (err) {
-        return `diretto-eccezione(${err instanceof Error ? err.message : String(err)})`;
-    }
-}
-
-// Diagnostica temporanea (round 6): stessa identica struttura di
-// getNativeBridge()/isNativeTrackingAvailable() (cache a livello di modulo
-// + early return + wrapper a due livelli), ma sotto nomi mai usati prima e
-// mai chiamati da pushSupabaseSession o da nessun altro punto del codice.
-// Se ANCHE questa si blocca sul telefono, il problema e' il pattern in se'.
-// Se invece funziona, il problema e' specifico dei binding esistenti
-// cachedBridge/getNativeBridge/isNativeTrackingAvailable.
-let cachedBridge2: NativeBridgePlugin | null = null;
-
-async function getNativeBridge2(): Promise<NativeBridgePlugin | null> {
-    if (cachedBridge2) return cachedBridge2;
-
-    try {
-        const core = await import("@capacitor/core");
-        if (!core.Capacitor.isNativePlatform()) return null;
-        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-        if (!plugin) return null;
-        cachedBridge2 = plugin;
-        return plugin;
-    } catch {
-        return null;
-    }
-}
-
-export async function isNativeTrackingAvailable2(): Promise<boolean> {
-    return (await getNativeBridge2()) !== null;
-}
-
-// Diagnostica temporanea (round 7): round 6 ha scoperto che ANCHE una
-// coppia di funzioni mai usate altrove (cachedBridge2/getNativeBridge2/
-// isNativeTrackingAvailable2), identica nella struttura a cachedBridge/
-// getNativeBridge/isNativeTrackingAvailable, si blocca allo stesso modo:
-// quindi non e' un binding esistente "avvelenato", e' il PATTERN stesso.
-// Qui isoliamo un'unica variabile alla volta: stessa indirezione a due
-// livelli (una funzione esportata che ne chiama un'altra privata), ma
-// SENZA cache e SENZA early return, cioe' l'unica differenza rimasta tra
-// questa e isNativeTrackingAvailableDirect() (che funziona sempre) e' che
-// qui il lavoro vero e' dentro una seconda funzione chiamata con await,
-// invece di stare tutto nella stessa funzione.
-async function getNativeBridge3(): Promise<NativeBridgePlugin | null> {
-    try {
-        const core = await import("@capacitor/core");
-        if (!core.Capacitor.isNativePlatform()) return null;
-        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-        return plugin ?? null;
-    } catch {
-        return null;
-    }
-}
-
-export async function isNativeTrackingAvailable3(): Promise<boolean> {
-    return (await getNativeBridge3()) !== null;
-}
-
-// Diagnostica temporanea (round 8): round 7 ha scoperto che ANCHE senza
-// cache e senza early return, una funzione esportata che fa "await" su
-// un'altra funzione async privata si blocca uguale. L'unica differenza
-// rimasta rispetto a isNativeTrackingAvailableDirect() (che funziona
-// sempre) e' la sintassi async/await a due livelli in se'. Qui proviamo
-// a fare la stessa indirezione a due livelli ma SENZA usare affatto
-// async/await nella funzione esterna: solo Promise/.then(), per capire se
-// il problema e' specifico della sintassi async/await del linguaggio
-// (come viene "tradotta" dal build) oppure di qualcos'altro.
-function getNativeBridge4(): Promise<NativeBridgePlugin | null> {
-    try {
-        return import("@capacitor/core").then((core) => {
-            if (!core.Capacitor.isNativePlatform()) return null;
-            const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-            return plugin ?? null;
-        });
-    } catch {
-        return Promise.resolve(null);
-    }
-}
-
-export function isNativeTrackingAvailable4(): Promise<boolean> {
-    return getNativeBridge4().then((v) => v !== null);
-}
-
-/**
- * Da chiamare dopo login e dopo ogni refresh automatico della sessione
-  * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
-   * lato nativo, che li salva in EncryptedSharedPreferences per poter
-    * autenticare le chiamate API del servizio di tracking/geofencing in
-     * background, quando la WebView non è attiva. session === null pulisce i
-      * token salvati (es. al logout).
-       *
-        * Passiamo anche URL Supabase e anon key: sono valori pubblici (già dentro
-         * il bundle web, esposti al browser tramite NEXT_PUBLIC_*), ma il lato
-          * nativo non ha altrimenti modo di conoscerli per rinnovare da solo il
-           * token quando scade, dato che non legge il bundle JS.
-            */
-export async function pushSupabaseSession(
-    session: { access_token: string; refresh_token: string; expires_at?: number } | null
-  ): Promise<void> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return;
-
-    try {
-          if (!session) {
-                  await bridge.clearSession();
-                  return;
-          }
-          await bridge.setSession({
-                  accessToken: session.access_token,
-                  refreshToken: session.refresh_token,
-                  expiresAt: session.expires_at ?? 0,
-                  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          });
-    } catch {
-          // Non bloccante: se il salvataggio fallisce, il tracking nativo resta
-          // semplicemente inattivo finché non arriva un aggiornamento successivo.
-    }
-}
-
-/** Richiede il permesso "posizione sempre consentita" (Android 10+, va
- * chiesto separatamente dal permesso in foreground). Su web ritorna true:
-  * non serve, il tracking lì resta comunque limitato al tab in foreground. */
-export async function requestBackgroundLocationPermission(): Promise<boolean> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return true;
-
-    try {
-          const { granted } = await bridge.requestBackgroundLocationPermission();
-          return granted;
-    } catch {
-          return false;
-    }
-}
-
-/** Avvia il Foreground Service nativo (notifica persistente, tracking
- * adattivo + geofencing). Ritorna false su web/PWA: lì il chiamante deve
-  * ricadere sul vecchio tracciamento a intervallo nel tab. */
-export async function startNativeTracking(): Promise<boolean> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return false;
-
-    try {
-          await bridge.startTracking();
-          return true;
-    } catch {
-          return false;
-    }
-}
-
-/** Ferma il Foreground Service nativo, se attivo. No-op su web/PWA. */
-export async function stopNativeTracking(): Promise<void> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return;
-
-    try {
-          await bridge.stopTracking();
-    } catch {
-          // ignorabile: se il service non era attivo non c'è nulla da fermare
-    }
+  setSession(options: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: number;
+    supabaseUrl: string;
+    supabaseAnonKey: string;
+  }): Promise<void>;
+  clearSession(): Promise<void>;
+  requestBackgroundLocationPermission(): Promise<{ granted: boolean }>;
+  startTracking(): Promise<void>;
+  stopTracking(): Promise<void>;
+  requestMicrophonePermission(): Promise<{ granted: boolean }>;
+  getTrackingDebugState(): Promise<{ running: boolean; lastError: string | null; lastStartAt: number }>;
 }
 
 /** true solo dentro l'app nativa Android (non su web/PWA). */
 export async function isNativeTrackingAvailable(): Promise<boolean> {
-    return (await getNativeBridge()) !== null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return false;
+    const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+    return !!plugin;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Diagnostica temporanea (vedi TrackingDebugState.java lato nativo):
-  * startNativeTracking() sopra ritorna successo appena Android accetta di
-   * avviare il Foreground Service, non quando è davvero partito — se fallisce
-    * dopo (es. un'eccezione dentro onStartCommand), il lato JS non lo scopre
-     * mai da solo, ed è esattamente per questo che la notifica mancante è stata
-      * così difficile da diagnosticare. Da rimuovere una volta trovata la causa.
-       */
-export async function getTrackingServiceDebugInfo(): Promise<{
-    running: boolean;
-    lastError: string | null;
-    lastStartAt: number;
-} | null> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return null;
+ * Da chiamare dopo login e dopo ogni refresh automatico della sessione
+ * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
+ * lato nativo, che li salva in EncryptedSharedPreferences per poter
+ * autenticare le chiamate API del servizio di tracking/geofencing in
+ * background, quando la WebView non è attiva. session === null pulisce i
+ * token salvati (es. al logout).
+ *
+ * Passiamo anche URL Supabase e anon key: sono valori pubblici (già dentro
+ * il bundle web, esposti al browser tramite NEXT_PUBLIC_*), ma il lato
+ * nativo non ha altrimenti modo di conoscerli per rinnovare da solo il
+ * token quando scade, dato che non legge il bundle JS.
+ */
+export async function pushSupabaseSession(
+  session: { access_token: string; refresh_token: string; expires_at?: number } | null
+): Promise<void> {
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return;
+  }
+  if (!bridge) return;
 
-    try {
-          return await bridge.getTrackingDebugState();
-    } catch (err) {
-          return { running: false, lastError: err instanceof Error ? err.message : String(err), lastStartAt: 0 };
+  try {
+    if (!session) {
+      await bridge.clearSession();
+      return;
     }
+    await bridge.setSession({
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      expiresAt: session.expires_at ?? 0,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    });
+  } catch {
+    // Non bloccante: se il salvataggio fallisce, il tracking nativo resta
+    // semplicemente inattivo finché non arriva un aggiornamento successivo.
+  }
 }
 
-export async function getNativeDebugInfo(): Promise<{
-    importOk: boolean;
-    isNative: boolean | null;
-    platform: string | null;
-    pluginRegistered: boolean;
-    buildTag: string;
-    error: string | null;
-}> {
-    try {
-          const core = await import("@capacitor/core");
-          const isNative = core.Capacitor.isNativePlatform();
-          const platform = core.Capacitor.getPlatform();
-          let pluginRegistered = false;
-          let pluginError: string | null = null;
-          try {
-                  const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-                  pluginRegistered = !!plugin;
-          } catch (err) {
-                  pluginError = err instanceof Error ? err.message : String(err);
-          }
-          return { importOk: true, isNative, platform, buildTag: "round4b", pluginRegistered, error: pluginError };
-    } catch (err) {
-          return {
-                  importOk: false,
-              buildTag: "round4b",
-                  isNative: null,
-                  platform: null,
-                  pluginRegistered: false,
-                  error: err instanceof Error ? err.message : String(err),
-          };
-    }
+/** Richiede il permesso "posizione sempre consentita" (Android 10+, va
+ * chiesto separatamente dal permesso in foreground). Su web ritorna true:
+ * non serve, il tracking lì resta comunque limitato al tab in foreground. */
+export async function requestBackgroundLocationPermission(): Promise<boolean> {
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return true;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return false;
+  }
+  if (!bridge) return true;
+
+  try {
+    const { granted } = await bridge.requestBackgroundLocationPermission();
+    return granted;
+  } catch {
+    return false;
+  }
+}
+
+/** Avvia il Foreground Service nativo (notifica persistente, tracking
+ * adattivo + geofencing). Ritorna false su web/PWA: lì il chiamante deve
+ * ricadere sul vecchio tracciamento a intervallo nel tab. */
+export async function startNativeTracking(): Promise<boolean> {
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return false;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return false;
+  }
+  if (!bridge) return false;
+
+  try {
+    await bridge.startTracking();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Ferma il Foreground Service nativo, se attivo. No-op su web/PWA. */
+export async function stopNativeTracking(): Promise<void> {
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return;
+  }
+  if (!bridge) return;
+
+  try {
+    await bridge.stopTracking();
+  } catch {
+    // ignorabile: se il service non era attivo non c'è nulla da fermare
+  }
+}
+
+/**
+ * Stato del Foreground Service nativo (vedi TrackingDebugState.java lato
+ * nativo): startNativeTracking() sopra ritorna successo appena Android
+ * accetta di avviare il service, non quando è davvero partito — se
+ * fallisce dopo (es. un'eccezione dentro onStartCommand), il lato JS non
+ * lo scopre mai da solo senza questa chiamata esplicita.
+ */
+export async function getTrackingServiceDebugInfo(): Promise<{
+  running: boolean;
+  lastError: string | null;
+  lastStartAt: number;
+} | null> {
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return null;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return null;
+  }
+  if (!bridge) return null;
+
+  try {
+    return await bridge.getTrackingDebugState();
+  } catch (err) {
+    return { running: false, lastError: err instanceof Error ? err.message : String(err), lastStartAt: 0 };
+  }
 }
 
 /**
  * Da chiamare prima di ogni navigator.mediaDevices.getUserMedia({ audio })
-  * (nota vocale, registrazione riunione): dentro l'app nativa Android,
-   * Capacitor concede il microfono alla WebView SOLO se l'app possiede già il
-    * permesso runtime RECORD_AUDIO — senza chiederlo esplicitamente qui prima,
-     * getUserMedia fallisce sempre e in silenzio (il tocco su "Registra" non
-      * sembra fare nulla). Su web/PWA non fa nulla: lì il browser gestisce da
-       * solo il popup di permesso microfono al primo utilizzo.
-        */
+ * (nota vocale, registrazione riunione): dentro l'app nativa Android,
+ * Capacitor concede il microfono alla WebView SOLO se l'app possiede già il
+ * permesso runtime RECORD_AUDIO — senza chiederlo esplicitamente qui prima,
+ * getUserMedia fallisce sempre e in silenzio (il tocco su "Registra" non
+ * sembra fare nulla). Su web/PWA non fa nulla: lì il browser gestisce da
+ * solo il popup di permesso microfono al primo utilizzo.
+ */
 export async function ensureNativeMicrophonePermission(): Promise<void> {
-    const bridge = await getNativeBridge();
-    if (!bridge) return;
+  let bridge: NativeBridgePlugin | null = null;
+  try {
+    const core = await import("@capacitor/core");
+    if (!core.Capacitor.isNativePlatform()) return;
+    bridge = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+  } catch {
+    return;
+  }
+  if (!bridge) return;
 
-    try {
-          await bridge.requestMicrophonePermission();
-    } catch {
-          // Se la richiesta fallisce, lasciamo che sia getUserMedia a fallire e
-          // mostrare l'errore al chiamante, invece di bloccare tutto qui.
-    }
+  try {
+    await bridge.requestMicrophonePermission();
+  } catch {
+    // Se la richiesta fallisce, lasciamo che sia getUserMedia a fallire e
+    // mostrare l'errore al chiamante, invece di bloccare tutto qui.
+  }
 }
-
