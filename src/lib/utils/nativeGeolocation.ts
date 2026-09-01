@@ -173,6 +173,31 @@ export async function isNativeTrackingAvailable3(): Promise<boolean> {
     return (await getNativeBridge3()) !== null;
 }
 
+// Diagnostica temporanea (round 8): round 7 ha scoperto che ANCHE senza
+// cache e senza early return, una funzione esportata che fa "await" su
+// un'altra funzione async privata si blocca uguale. L'unica differenza
+// rimasta rispetto a isNativeTrackingAvailableDirect() (che funziona
+// sempre) e' la sintassi async/await a due livelli in se'. Qui proviamo
+// a fare la stessa indirezione a due livelli ma SENZA usare affatto
+// async/await nella funzione esterna: solo Promise/.then(), per capire se
+// il problema e' specifico della sintassi async/await del linguaggio
+// (come viene "tradotta" dal build) oppure di qualcos'altro.
+function getNativeBridge4(): Promise<NativeBridgePlugin | null> {
+    try {
+        return import("@capacitor/core").then((core) => {
+            if (!core.Capacitor.isNativePlatform()) return null;
+            const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+            return plugin ?? null;
+        });
+    } catch {
+        return Promise.resolve(null);
+    }
+}
+
+export function isNativeTrackingAvailable4(): Promise<boolean> {
+    return getNativeBridge4().then((v) => v !== null);
+}
+
 /**
  * Da chiamare dopo login e dopo ogni refresh automatico della sessione
   * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
