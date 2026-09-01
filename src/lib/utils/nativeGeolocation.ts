@@ -147,6 +147,32 @@ export async function isNativeTrackingAvailable2(): Promise<boolean> {
     return (await getNativeBridge2()) !== null;
 }
 
+// Diagnostica temporanea (round 7): round 6 ha scoperto che ANCHE una
+// coppia di funzioni mai usate altrove (cachedBridge2/getNativeBridge2/
+// isNativeTrackingAvailable2), identica nella struttura a cachedBridge/
+// getNativeBridge/isNativeTrackingAvailable, si blocca allo stesso modo:
+// quindi non e' un binding esistente "avvelenato", e' il PATTERN stesso.
+// Qui isoliamo un'unica variabile alla volta: stessa indirezione a due
+// livelli (una funzione esportata che ne chiama un'altra privata), ma
+// SENZA cache e SENZA early return, cioe' l'unica differenza rimasta tra
+// questa e isNativeTrackingAvailableDirect() (che funziona sempre) e' che
+// qui il lavoro vero e' dentro una seconda funzione chiamata con await,
+// invece di stare tutto nella stessa funzione.
+async function getNativeBridge3(): Promise<NativeBridgePlugin | null> {
+    try {
+        const core = await import("@capacitor/core");
+        if (!core.Capacitor.isNativePlatform()) return null;
+        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+        return plugin ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export async function isNativeTrackingAvailable3(): Promise<boolean> {
+    return (await getNativeBridge3()) !== null;
+}
+
 /**
  * Da chiamare dopo login e dopo ogni refresh automatico della sessione
   * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
