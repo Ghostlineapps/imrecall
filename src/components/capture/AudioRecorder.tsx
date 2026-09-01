@@ -60,7 +60,6 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
 
-    recorder.stop();
     if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
 
@@ -69,10 +68,19 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
       wakeLockRef.current = null;
     }
 
+    // Stesso ordine di MeetingRecorder.tsx: onstop assegnato PRIMA di
+    // stop(), tracce fermate solo dentro onstop, per evitare che su
+    // Safari/iOS l'ultimo pezzetto di audio venga troncato.
     recorder.onstop = async () => {
+      recorder.stream.getTracks().forEach((t) => t.stop());
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      if (blob.size === 0) {
+        setError("La registrazione è risultata vuota. Riprova tenendo IMRECALL aperto in primo piano.");
+        return;
+      }
       await uploadAudio(blob);
     };
+    recorder.stop();
   }
 
   async function uploadAudio(blob: Blob) {

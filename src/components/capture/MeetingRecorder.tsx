@@ -80,8 +80,6 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
 
-    recorder.stop();
-    recorder.stream.getTracks().forEach((t) => t.stop());
     if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
 
@@ -90,10 +88,24 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
       wakeLockRef.current = null;
     }
 
+    // Assegniamo onstop PRIMA di chiamare stop() e fermiamo le tracce audio
+    // solo dentro onstop (non subito dopo stop(), come prima): su alcuni
+    // browser — in particolare Safari/iOS, dove questa registrazione si è
+    // vista interrompersi senza salvare nulla — fermare lo stream troppo
+    // presto può troncare l'ultimo chunk prima ancora che l'evento "stop"
+    // scatti, risultando in un file vuoto o mancante.
     recorder.onstop = async () => {
+      recorder.stream.getTracks().forEach((t) => t.stop());
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      if (blob.size === 0) {
+        setError(
+          "La registrazione è risultata vuota: probabilmente il telefono è passato in background o lo schermo si è bloccato durante la riunione. Riprova tenendo IMRECALL aperto in primo piano per tutta la durata."
+        );
+        return;
+      }
       await uploadMeeting(blob);
     };
+    recorder.stop();
   }
 
   async function uploadMeeting(blob: Blob) {
