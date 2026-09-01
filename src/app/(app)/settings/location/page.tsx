@@ -200,8 +200,22 @@ export default function LocationSettingsPage() {
   // solo come fallback per chi usa il sito da un browser desktop/mobile.
   const [nativeAvailable, setNativeAvailable] = useState(false);
 
+  // Ora che getNativeBridge() (vedi nativeGeolocation.ts) non mette più in
+  // cache un fallimento per sempre, ripetiamo comunque il controllo un paio
+  // di volte a distanza ravvicinata come rete di sicurezza, nel caso ci sia
+  // davvero un minimo ritardo di Capacitor all'avvio — così questo stato non
+  // resta bloccato su false per tutta la sessione della pagina.
   useEffect(() => {
-    isNativeTrackingAvailable().then(setNativeAvailable);
+    let cancelled = false;
+    const check = () => isNativeTrackingAvailable().then((v) => !cancelled && v && setNativeAvailable(true));
+    check();
+    const t1 = setTimeout(check, 500);
+    const t2 = setTimeout(check, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, []);
 
   // Diagnostica temporanea (vedi nativeGeolocation.ts): mostra perché
