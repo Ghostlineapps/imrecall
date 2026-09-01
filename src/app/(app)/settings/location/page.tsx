@@ -6,6 +6,7 @@ import useSWR from "swr";
 import {
   ensureNativeLocationPermission,
   getNativeDebugInfo,
+  getTrackingServiceDebugInfo,
   isNativeTrackingAvailable,
   requestBackgroundLocationPermission,
   startNativeTracking,
@@ -215,6 +216,28 @@ export default function LocationSettingsPage() {
       )
     );
   }, []);
+
+  // Seconda riga di diagnostica temporanea: a differenza di nativeDebug sopra
+  // (che dice solo se il PONTE verso il nativo funziona), questa dice se il
+  // Foreground Service è DAVVERO partito o se è fallito con un errore
+  // specifico (vedi TrackingDebugState.java) — refreshTrackingDebug è
+  // richiamabile a mano dal pulsante qui sotto, perché lo stato cambia solo
+  // dopo aver toccato Attiva/Disattiva tracciamento.
+  const [serviceDebug, setServiceDebug] = useState<string | null>(null);
+  async function refreshTrackingDebug() {
+    const info = await getTrackingServiceDebugInfo();
+    if (!info) {
+      setServiceDebug("(nessun ponte nativo disponibile)");
+      return;
+    }
+    const when = info.lastStartAt ? new Date(info.lastStartAt).toLocaleTimeString("it-IT") : "-";
+    setServiceDebug(`servizio in esecuzione:${info.running} ultimo avvio:${when} ultimo errore:${info.lastError ?? "-"}`);
+  }
+  useEffect(() => {
+    if (!nativeAvailable) return;
+    refreshTrackingDebug();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeAvailable]);
 
   const { data: locationsData } = useSWR("/api/locations?limit=50", fetcher);
   const locations = locationsData?.locations ?? [];
@@ -588,6 +611,12 @@ export default function LocationSettingsPage() {
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
         {nativeDebug && <p className="text-[10px] text-celeste-muted/60 break-all mt-1">{nativeDebug}</p>}
+        {serviceDebug && <p className="text-[10px] text-celeste-muted/60 break-all">{serviceDebug}</p>}
+        {nativeAvailable && (
+          <button onClick={refreshTrackingDebug} className="text-[10px] underline text-celeste-muted/60">
+            Aggiorna diagnostica
+          </button>
+        )}
       </div>
 
       <div className="card-light space-y-3">
