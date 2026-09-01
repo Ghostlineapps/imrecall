@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { Users, Square, CheckCircle2 } from "lucide-react";
 import { mutate } from "swr";
-import { ensureNativeMicrophonePermission } from "@/lib/utils/nativeGeolocation";
 
 // Stesso schema di AudioRecorder.tsx, ma pensato per registrazioni lunghe
 // (riunioni/call), non note vocali brevi: timer in HH:MM:SS invece di
@@ -32,11 +31,11 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     setError(null);
     setDetectedMessage(null);
     try {
-      // Dentro l'app nativa Android va chiesto esplicitamente, altrimenti
-      // Capacitor nega sempre il microfono alla WebView e getUserMedia
-      // fallisce in silenzio (il tocco su "Registra" sembra non fare
-      // nulla). Su web/PWA questa chiamata non fa nulla.
-      await ensureNativeMicrophonePermission();
+      // Dentro l'app nativa Android, Capacitor intercetta da solo questa
+      // chiamata e mostra il popup di sistema per il permesso microfono
+      // (serve comunque RECORD_AUDIO dichiarato in AndroidManifest.xml) —
+      // non va richiesto esplicitamente prima, altrimenti si rischia un
+      // doppio popup/conflitto che blocca tutto in silenzio.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Bitrate basso ma esplicito (senza specificarlo, il default del
       // browser per l'audio può arrivare a ~128kbps, che per una riunione di

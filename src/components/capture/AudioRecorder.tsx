@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
 import { mutate } from "swr";
-import { ensureNativeMicrophonePermission } from "@/lib/utils/nativeGeolocation";
 
 export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   const [recording, setRecording] = useState(false);
@@ -24,11 +23,11 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   async function startRecording() {
     setError(null);
     try {
-      // Dentro l'app nativa Android va chiesto esplicitamente, altrimenti
-      // Capacitor nega sempre il microfono alla WebView e getUserMedia
-      // fallisce in silenzio (il tocco su "Registra" sembra non fare
-      // nulla). Su web/PWA questa chiamata non fa nulla.
-      await ensureNativeMicrophonePermission();
+      // Dentro l'app nativa Android, Capacitor intercetta da solo questa
+      // chiamata e mostra il popup di sistema per il permesso microfono
+      // (serve comunque RECORD_AUDIO dichiarato in AndroidManifest.xml) —
+      // non va richiesto esplicitamente prima, altrimenti si rischia un
+      // doppio popup/conflitto che blocca tutto in silenzio.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Bitrate basso ma ok per il parlato: tiene il file sotto il limite di
       // 25MB di Whisper anche per registrazioni lunghe (vedi audio/route.ts).
