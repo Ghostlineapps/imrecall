@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Users, Square, CheckCircle2 } from "lucide-react";
 import { mutate } from "swr";
+import { ensureNativeMicrophonePermission } from "@/lib/utils/nativeGeolocation";
 
 // Stesso schema di AudioRecorder.tsx, ma pensato per registrazioni lunghe
 // (riunioni/call), non note vocali brevi: timer in HH:MM:SS invece di
@@ -20,34 +21,60 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Mantiene lo schermo acceso durante la registrazione: le riunioni durano
+  // decine di minuti, ben oltre il blocco automatico dello schermo (1-5
+  // minuti a seconda del telefono) — senza questo, lo schermo si spegne e
+  // la registrazione si interrompe silenziosamente, senza errore visibile
+  // e senza nulla da salvare quando si riapre l'app.
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   async function startRecording() {
     setError(null);
     setDetectedMessage(null);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Bitrate basso ma esplicito (senza specificarlo, il default del
-    // browser per l'audio può arrivare a ~128kbps, che per una riunione di
-    // 60-90 minuti supererebbe facilmente il limite di 25MB di Whisper). A
-    // 32kbps mono l'opus resta ampiamente intelligibile per il parlato e
-    // un'ora di registrazione pesa ~14MB, ben sotto la soglia (vedi
-    // MAX_FILE_BYTES in /api/upload/meeting).
-    const recorder = new MediaRecorder(stream, {
-      mimeType: "audio/webm;codecs=opus",
-      audioBitsPerSecond: 32000,
-    });
-    chunksRef.current = [];
+    try {
+      // Dentro l'app nativa Android va chiesto esplicitamente, altrimenti
+      // Capacitor nega sempre il microfono alla WebView e getUserMedia
+      // fallisce in silenzio (il tocco su "Registra" sembra non fare
+      // nulla). Su web/PWA questa chiamata non fa nulla.
+      await ensureNativeMicrophonePermission();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Bitrate basso ma esplicito (senza specificarlo, il default del
+      // browser per l'audio può arrivare a ~128kbps, che per una riunione di
+      // 60-90 minuti supererebbe facilmente il limite di 25MB di Whisper). A
+      // 32kbps mono l'opus resta ampiamente intelligibile per il parlato e
+      // un'ora di registrazione pesa ~14MB, ben sotto la soglia (vedi
+      // MAX_FILE_BYTES in /api/upload/meeting).
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+        audioBitsPerSecond: 32000,
+      });
+      chunksRef.current = [];
 
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
-    // Chunk ogni 5s invece di un unico blob a fine registrazione: per una
-    // call di 60-90 minuti evita di tenere tutto in un solo evento a fine
-    // corsa e rende la registrazione più resiliente.
-    recorder.start(5000);
-    mediaRecorderRef.current = recorder;
-    setRecording(true);
-    setSeconds(0);
-    timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      // Chunk ogni 5s invece di un unico blob a fine registrazione: per una
+      // call di 60-90 minuti evita di tenere tutto in un solo evento a fine
+      // corsa e rende la registrazione più resiliente.
+      recorder.start(5000);
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        }
+      } catch {
+        // Non bloccante: se il wake lock non è supportato o viene negato,
+        // la registrazione parte comunque.
+      }
+    } catch {
+      setError(
+        "Impossibile accedere al microfono. Controlla di aver concesso il permesso microfono a IMRECALL nelle impostazioni del telefono/browser."
+      );
+    }
   }
 
   async function stopRecording() {
@@ -58,6 +85,11 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     recorder.stream.getTracks().forEach((t) => t.stop());
     if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
+
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
 
     recorder.onstop = async () => {
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });

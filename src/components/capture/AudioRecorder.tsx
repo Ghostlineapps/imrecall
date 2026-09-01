@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
 import { mutate } from "swr";
+import { ensureNativeMicrophonePermission } from "@/lib/utils/nativeGeolocation";
 
 export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   const [recording, setRecording] = useState(false);
@@ -12,21 +13,48 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Mantiene lo schermo acceso durante la registrazione: senza, il blocco
+  // automatico dello schermo (dopo 1-5 minuti a seconda del telefono)
+  // interrompe silenziosamente la registrazione — nessun errore visibile,
+  // semplicemente non c'è più nulla da salvare quando si riapre l'app.
+  // Wake Lock API: supportata su Chrome/Android e Safari 16.4+, non
+  // bloccante se assente (la registrazione parte comunque).
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   async function startRecording() {
     setError(null);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Bitrate basso ma ok per il parlato: tiene il file sotto il limite di
-    // 25MB di Whisper anche per registrazioni lunghe (vedi audio/route.ts).
-    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32000 });
-    chunksRef.current = [];
+    try {
+      // Dentro l'app nativa Android va chiesto esplicitamente, altrimenti
+      // Capacitor nega sempre il microfono alla WebView e getUserMedia
+      // fallisce in silenzio (il tocco su "Registra" sembra non fare
+      // nulla). Su web/PWA questa chiamata non fa nulla.
+      await ensureNativeMicrophonePermission();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Bitrate basso ma ok per il parlato: tiene il file sotto il limite di
+      // 25MB di Whisper anche per registrazioni lunghe (vedi audio/route.ts).
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32000 });
+      chunksRef.current = [];
 
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-    setRecording(true);
-    setSeconds(0);
-    timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        }
+      } catch {
+        // Non bloccante: se il wake lock non è supportato o viene negato,
+        // la registrazione parte comunque.
+      }
+    } catch {
+      setError(
+        "Impossibile accedere al microfono. Controlla di aver concesso il permesso microfono a IMRECALL nelle impostazioni del telefono/browser."
+      );
+    }
   }
 
   async function stopRecording() {
@@ -36,6 +64,11 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
     recorder.stop();
     if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
+
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
 
     recorder.onstop = async () => {
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
