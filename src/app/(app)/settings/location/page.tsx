@@ -5,18 +5,13 @@ import Link from "next/link";
 import useSWR from "swr";
 import {
   ensureNativeLocationPermission,
-  getLastBridgeFailureReason,
-    getNativeDebugInfo,
   getTrackingServiceDebugInfo,
   isNativeTrackingAvailable,
-  isNativeTrackingAvailableDirect,
-  isNativeTrackingAvailable2,
-  isNativeTrackingAvailable3,
-  isNativeTrackingAvailable4,
   requestBackgroundLocationPermission,
   startNativeTracking,
   stopNativeTracking,
 } from "@/lib/utils/nativeGeolocation";
+
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
 const MAX_TAKEOUT_POINTS = 60000;
@@ -90,8 +85,8 @@ function extractTakeoutPoints(json: unknown): Point[] {
         typeof loc.timestamp === "string"
           ? loc.timestamp
           : typeof loc.timestampMs === "string"
-          ? new Date(Number(loc.timestampMs)).toISOString()
-          : null;
+            ? new Date(Number(loc.timestampMs)).toISOString()
+            : null;
 
       if (parsed && timestamp) {
         points.push({ latitude: parsed.lat, longitude: parsed.lng, recorded_at: timestamp });
@@ -108,8 +103,8 @@ function extractTakeoutPoints(json: unknown): Point[] {
       typeof segment.startTime === "string"
         ? segment.startTime
         : typeof segment.startTimestamp === "string"
-        ? segment.startTimestamp
-        : undefined;
+          ? segment.startTimestamp
+          : undefined;
 
     const visit = (segment.visit ?? segment.placeVisit) as Record<string, unknown> | undefined;
     if (visit && startTime) {
@@ -205,109 +200,17 @@ export default function LocationSettingsPage() {
   // solo come fallback per chi usa il sito da un browser desktop/mobile.
   const [nativeAvailable, setNativeAvailable] = useState(false);
 
-  // Ora che getNativeBridge() (vedi nativeGeolocation.ts) non mette più in
-  // cache un fallimento per sempre, ripetiamo comunque il controllo un paio
-  // di volte a distanza ravvicinata come rete di sicurezza, nel caso ci sia
-  // davvero un minimo ritardo di Capacitor all'avvio — così questo stato non
-  // resta bloccato su false per tutta la sessione della pagina.
-// Diagnostica temporanea (2026-09-01, round 2): sul telefono di test
-    // questo controllo continua a fallire anche quando getNativeDebugInfo()
-    // (sotto) mostra "nativo:true plugin:true" nello stesso istante, pur
-    // essendo logicamente la stessa identica catena di chiamate — registriamo
-    // qui ogni tentativo (riuscito o no, col motivo esatto del fallimento) per
-    // vederlo finalmente nella UI invece di continuare a indovinare. Da
-    // rimuovere una volta trovata la causa.
-    const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
-    useEffect(() => {
-            setBridgeCheckLog((prev) => [...prev, "effect:avviato(v8)"]);
-    const check = async (label: string) => {
-  try {
-    const v = await isNativeTrackingAvailable();
-    const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
-    setBridgeCheckLog((prev) => [...prev, entry]);
-    if (v) setNativeAvailable(true);
-  } catch (err) {
-    setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
-  }
-};
-      const checkInline = async (label: string) => {
-        try {
-          const core = await import("@capacitor/core");
-          const isNative = core.Capacitor.isNativePlatform();
-          const plugin = isNative ? core.registerPlugin("NativeBridge") : null;
-          setBridgeCheckLog((prev) => [...prev, `${label}:inline(nativo=${isNative},plugin=${!!plugin})`]);
-        } catch (err) {
-          setBridgeCheckLog((prev) => [...prev, `${label}:inline-eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        }
-      };
-      const checkDirect = async (label: string) => {
-        try {
-          const result = await isNativeTrackingAvailableDirect();
-          setBridgeCheckLog((prev) => [...prev, `${label}:${result}`]);
-        } catch (err) {
-          setBridgeCheckLog((prev) => [...prev, `${label}:direct-eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        }
-      };
-      const check2 = async (label: string) => {
-        try {
-          const v = await isNativeTrackingAvailable2();
-          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli(${v})`]);
-        } catch (err) {
-          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        }
-      };
-      const check3 = async (label: string) => {
-        try {
-          const v = await isNativeTrackingAvailable3();
-          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-senza-cache(${v})`]);
-        } catch (err) {
-          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-senza-cache-eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        }
-      };
-      const check4 = (label: string) => {
-        isNativeTrackingAvailable4()
-        .then((v) => {
-          setBridgeCheckLog((prev) => [...prev, `${label}:senza-async-await(${v})`]);
-        })
-        .catch((err) => {
-          setBridgeCheckLog((prev) => [...prev, `${label}:senza-async-await-eccezione(${err instanceof Error ? err.message : String(err)})`]);
-        });
-      };
-      check("t0");
-      checkInline("i0");
-      checkDirect("d0");
-      check2("c0");
-      check3("e0");
-      check4("f0");
-      const t1 = setTimeout(() => check("t500"), 500);
-      const t2 = setTimeout(() => check("t1500"), 1500);
-      const t3 = setTimeout(() => check("t4000"), 4000);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
-    }, []);
-
-  // Diagnostica temporanea (vedi nativeGeolocation.ts): mostra perché
-  // l'app pensa o non pensa di essere dentro il guscio nativo Android,
-  // invece di dedurlo alla cieca da isNativeTrackingAvailable() che
-  // nasconde ogni dettaglio dietro un semplice true/false.
-  const [nativeDebug, setNativeDebug] = useState<string | null>(null);
   useEffect(() => {
-    getNativeDebugInfo().then((info) =>
-      setNativeDebug(
-                `import:${info.importOk} nativo:${info.isNative} piattaforma:${info.platform ?? "-"} plugin:${info.pluginRegistered} build:${info.buildTag} errore:${info.error ?? "-"}`
-      )
-    );
+    isNativeTrackingAvailable().then((v) => {
+      if (v) setNativeAvailable(true);
+    });
   }, []);
 
-  // Seconda riga di diagnostica temporanea: a differenza di nativeDebug sopra
-  // (che dice solo se il PONTE verso il nativo funziona), questa dice se il
-  // Foreground Service è DAVVERO partito o se è fallito con un errore
-  // specifico (vedi TrackingDebugState.java) — refreshTrackingDebug è
-  // richiamabile a mano dal pulsante qui sotto, perché lo stato cambia solo
-  // dopo aver toccato Attiva/Disattiva tracciamento.
+  // Diagnostica: dice se il Foreground Service è DAVVERO partito o se è
+  // fallito con un errore specifico (vedi TrackingDebugState.java) —
+  // refreshTrackingDebug è richiamabile a mano dal pulsante qui sotto,
+  // perché lo stato cambia solo dopo aver toccato Attiva/Disattiva
+  // tracciamento.
   const [serviceDebug, setServiceDebug] = useState<string | null>(null);
   async function refreshTrackingDebug() {
     const info = await getTrackingServiceDebugInfo();
@@ -396,39 +299,39 @@ export default function LocationSettingsPage() {
       return;
     }
 
-      // Dentro l'app nativa Android il vero permesso di sistema va chiesto
-      // esplicitamente tramite il plugin Capacitor – vedi nativeGeolocation.ts.
-      // Su web/PWA non fa nulla.
-      ensureNativeLocationPermission().finally(() => {
+    // Dentro l'app nativa Android il vero permesso di sistema va chiesto
+    // esplicitamente tramite il plugin Capacitor – vedi nativeGeolocation.ts.
+    // Su web/PWA non fa nulla.
+    ensureNativeLocationPermission().finally(() => {
       navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        setTrackingError(null);
-        try {
-          await fetch("/api/locations/track", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy,
-              recorded_at: new Date(position.timestamp).toISOString(),
-            }),
-          });
-          setLastPing(new Date().toLocaleTimeString("it-IT"));
-        } catch {
-          setTrackingError("Errore nell'invio della posizione al server.");
-        }
-      },
-      (err) => {
-        setTrackingError(
-          err.code === err.PERMISSION_DENIED
-            ? "Permesso di geolocalizzazione negato. Abilitalo nelle impostazioni del browser."
-            : "Impossibile ottenere la posizione attuale."
-        );
-      },
-      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 15000 }
-    );
-      });
+        async (position) => {
+          setTrackingError(null);
+          try {
+            await fetch("/api/locations/track", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                recorded_at: new Date(position.timestamp).toISOString(),
+              }),
+            });
+            setLastPing(new Date().toLocaleTimeString("it-IT"));
+          } catch {
+            setTrackingError("Errore nell'invio della posizione al server.");
+          }
+        },
+        (err) => {
+          setTrackingError(
+            err.code === err.PERMISSION_DENIED
+              ? "Permesso di geolocalizzazione negato. Abilitalo nelle impostazioni del browser."
+              : "Impossibile ottenere la posizione attuale."
+          );
+        },
+        { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 15000 }
+      );
+    });
   }
 
   async function toggleTracking() {
@@ -543,8 +446,8 @@ export default function LocationSettingsPage() {
             meta?.DateTimeOriginal instanceof Date
               ? meta.DateTimeOriginal
               : meta?.CreateDate instanceof Date
-              ? meta.CreateDate
-              : new Date(file.lastModified);
+                ? meta.CreateDate
+                : new Date(file.lastModified);
 
           points.push({
             latitude: gps.latitude,
@@ -625,8 +528,6 @@ export default function LocationSettingsPage() {
 
       <h1 className="text-xl font-semibold">Spostamenti</h1>
 
-      <p className="text-xs font-bold text-urgent">Versione pagina: 2026-09-01 18:47 UTC</p>
-
       <div className="card-light space-y-3">
         <div>
           <p className="font-medium">Importa da Google Maps</p>
@@ -697,11 +598,7 @@ export default function LocationSettingsPage() {
           <p className="text-sm text-celeste-muted">Ultima posizione salvata alle {lastPing}</p>
         )}
         {trackingError && <p className="text-urgent text-sm">{trackingError}</p>}
-        {nativeDebug && <p className="text-[10px] text-celeste-muted/60 break-all mt-1">{nativeDebug}</p>}
-        {bridgeCheckLog.length > 0 && (
-                  <p className="text-[10px] text-celeste-muted/60 break-all">{bridgeCheckLog.join(" | ")}</p>
-                )}
-               {serviceDebug && <p className="text-[10px] text-celeste-muted/60 break-all">{serviceDebug}</p>}
+        {serviceDebug && <p className="text-[10px] text-celeste-muted/60 break-all">{serviceDebug}</p>}
         {nativeAvailable && (
           <button onClick={refreshTrackingDebug} className="text-[10px] underline text-celeste-muted/60">
             Aggiorna diagnostica
