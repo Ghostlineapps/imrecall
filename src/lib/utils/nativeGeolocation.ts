@@ -214,6 +214,7 @@ export async function getNativeDebugInfo(): Promise<{
     isNative: boolean | null;
     platform: string | null;
     pluginRegistered: boolean;
+    buildTag: string;
     error: string | null;
 }> {
     try {
@@ -228,10 +229,11 @@ export async function getNativeDebugInfo(): Promise<{
           } catch (err) {
                   pluginError = err instanceof Error ? err.message : String(err);
           }
-          return { importOk: true, isNative, platform, pluginRegistered, error: pluginError };
+          return { importOk: true, isNative, platform, buildTag: "round4b", pluginRegistered, error: pluginError };
     } catch (err) {
           return {
                   importOk: false,
+              buildTag: "round4b",
                   isNative: null,
                   platform: null,
                   pluginRegistered: false,
