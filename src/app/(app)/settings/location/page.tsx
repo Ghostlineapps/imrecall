@@ -218,10 +218,18 @@ export default function LocationSettingsPage() {
       setBridgeCheckLog((prev) => [...prev, "effect:avviato"]);
       const check = async (label: string) => {
         try {
-          const v = await isNativeTrackingAvailable();
-          const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
+          const core = await import("@capacitor/core");
+          const isNative = core.Capacitor.isNativePlatform();
+          let pluginOk = false;
+          try {
+            const plugin = core.registerPlugin("NativeBridge");
+            pluginOk = !!plugin;
+          } catch {
+            pluginOk = false;
+          }
+          const entry = `${label}:diretto(nativo=${isNative},plugin=${pluginOk})`;
           setBridgeCheckLog((prev) => [...prev, entry]);
-          if (v) setNativeAvailable(true);
+          if (isNative && pluginOk) setNativeAvailable(true);
         } catch (err) {
           setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
         }
