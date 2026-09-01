@@ -160,6 +160,48 @@ export async function isNativeTrackingAvailable(): Promise<boolean> {
 }
 
 /**
+ * Diagnostica temporanea: isNativeTrackingAvailable() ritorna solo true/
+ * false, inghiottendo qualunque eccezione lungo la strada (import di
+ * @capacitor/core fallito, Capacitor.isNativePlatform() che ritorna false
+ * inaspettatamente, registerPlugin che lancia). Sul telefono di test la
+ * pagina impostazioni posizione sta mostrando il vecchio tracciamento da
+ * browser invece di quello nativo, quindi da qualche parte questa catena
+ * fallisce silenziosamente — questa funzione espone ogni passaggio così da
+ * vederlo direttamente nella UI invece di continuare a indovinare alla
+ * cieca. Da rimuovere una volta trovata la causa.
+ */
+export async function getNativeDebugInfo(): Promise<{
+  importOk: boolean;
+  isNative: boolean | null;
+  platform: string | null;
+  pluginRegistered: boolean;
+  error: string | null;
+}> {
+  try {
+    const core = await import("@capacitor/core");
+    const isNative = core.Capacitor.isNativePlatform();
+    const platform = core.Capacitor.getPlatform();
+    let pluginRegistered = false;
+    let pluginError: string | null = null;
+    try {
+      const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+      pluginRegistered = !!plugin;
+    } catch (err) {
+      pluginError = err instanceof Error ? err.message : String(err);
+    }
+    return { importOk: true, isNative, platform, pluginRegistered, error: pluginError };
+  } catch (err) {
+    return {
+      importOk: false,
+      isNative: null,
+      platform: null,
+      pluginRegistered: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
  * Da chiamare prima di ogni navigator.mediaDevices.getUserMedia({ audio })
  * (nota vocale, registrazione riunione): dentro l'app nativa Android,
  * Capacitor concede il microfono alla WebView SOLO se l'app possiede già il
