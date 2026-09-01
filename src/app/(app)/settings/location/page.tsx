@@ -11,6 +11,7 @@ import {
   isNativeTrackingAvailable,
   isNativeTrackingAvailableDirect,
   isNativeTrackingAvailable2,
+  isNativeTrackingAvailable3,
   requestBackgroundLocationPermission,
   startNativeTracking,
   stopNativeTracking,
@@ -217,7 +218,7 @@ export default function LocationSettingsPage() {
     // rimuovere una volta trovata la causa.
     const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
     useEffect(() => {
-            setBridgeCheckLog((prev) => [...prev, "effect:avviato(v6)"]);
+            setBridgeCheckLog((prev) => [...prev, "effect:avviato(v7)"]);
     const check = async (label: string) => {
   try {
     const v = await isNativeTrackingAvailable();
@@ -254,10 +255,19 @@ export default function LocationSettingsPage() {
           setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-eccezione(${err instanceof Error ? err.message : String(err)})`]);
         }
       };
+      const check3 = async (label: string) => {
+        try {
+          const v = await isNativeTrackingAvailable3();
+          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-senza-cache(${v})`]);
+        } catch (err) {
+          setBridgeCheckLog((prev) => [...prev, `${label}:due-livelli-senza-cache-eccezione(${err instanceof Error ? err.message : String(err)})`]);
+        }
+      };
       check("t0");
       checkInline("i0");
       checkDirect("d0");
       check2("c0");
+      check3("e0");
       const t1 = setTimeout(() => check("t500"), 500);
       const t2 = setTimeout(() => check("t1500"), 1500);
       const t3 = setTimeout(() => check("t4000"), 4000);
