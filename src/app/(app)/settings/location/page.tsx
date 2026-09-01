@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
+import {
+  ensureNativeLocationPermission,
+  isNativeTrackingAvailable,
+  requestBackgroundLocationPermission,
+  startNativeTracking,
+  stopNativeTracking,
+} from "@/lib/utils/nativeGeolocation";
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
 const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
 const MAX_TAKEOUT_POINTS = 60000;
@@ -186,6 +192,16 @@ export default function LocationSettingsPage() {
   const [lastPing, setLastPing] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    // Dentro l'app nativa Android il tracciamento gira in un Foreground
+  // Service con geofencing + campionamento adattivo (vedi
+  // nativeGeolocation.ts), non più nel setInterval qui sotto — quello resta
+  // solo come fallback per chi usa il sito da un browser desktop/mobile.
+  const [nativeAvailable, setNativeAvailable] = useState(false);
+  
+  useEffect(() => {
+    isNativeTrackingAvailable().then(setNativeAvailable);
+  }, []);
+  
   const { data: locationsData } = useSWR("/api/locations?limit=50", fetcher);
   const locations = locationsData?.locations ?? [];
 
@@ -201,6 +217,10 @@ export default function LocationSettingsPage() {
   }, []);
 
   useEffect(() => {
+    // Su nativo il tracciamento è gestito dal Foreground Service Android
+    // (avviato/fermato da toggleTracking), non da questo intervallo nel tab.
+    if (nativeAvailable) return;
+    
     if (!tracking) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       return;
@@ -213,7 +233,7 @@ export default function LocationSettingsPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking]);
+  }, [tracking, nativeAvailable]);
 
   function sendCurrentPosition() {
     if (!navigator.geolocation) {
@@ -256,9 +276,34 @@ export default function LocationSettingsPage() {
       });
   }
 
-  function toggleTracking() {
+  async function toggleTracking() {
     const next = !tracking;
+
+    if (nativeAvailable) {
+      if (next) {
+        // Il permesso "posizione sempre consentita" va chiesto esplicitamente
+        // (separato dal permesso in foreground su Android 10+): senza,
+        // geofencing e tracking si fermerebbero non appena l'app va in
+        // background, vanificando lo scopo del Foreground Service.
+        const granted = await requestBackgroundLocationPermission();
+        if (!granted) {
+          setTrackingError(
+            "Serve il permesso di posizione \"sempre consentita\" per il tracciamento in background. Abilitalo nelle impostazioni di sistema dell'app."
+            );
+          return;
+        }
+        const started = await startNativeTracking();
+        if (!started) {
+          setTrackingError("Impossibile avviare il tracciamento nativo.");
+          return;
+        }
+      } else {
+        await stopNativeTracking();
+      }
+    }
+
     setTracking(next);
+    setTrackingError(null);
     window.localStorage.setItem(TRACKING_STORAGE_KEY, String(next));
   }
 
