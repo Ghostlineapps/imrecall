@@ -215,24 +215,26 @@ export default function LocationSettingsPage() {
     // rimuovere una volta trovata la causa.
     const [bridgeCheckLog, setBridgeCheckLog] = useState<string[]>([]);
     useEffect(() => {
-          let cancelled = false;
-          const check = async (label: string) => {
-                  const v = await isNativeTrackingAvailable();
-                  if (cancelled) return;
-                  const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
-                  setBridgeCheckLog((prev) => [...prev, entry]);
-                  if (v) setNativeAvailable(true);
-          };
-          check("t0");
-          const t1 = setTimeout(() => check("t500"), 500);
-          const t2 = setTimeout(() => check("t1500"), 1500);
-          const t3 = setTimeout(() => check("t4000"), 4000);
-          return () => {
-                  cancelled = true;
-                  clearTimeout(t1);
-                  clearTimeout(t2);
-                  clearTimeout(t3);
-          };
+      setBridgeCheckLog((prev) => [...prev, "effect:avviato"]);
+      const check = async (label: string) => {
+        try {
+          const v = await isNativeTrackingAvailable();
+          const entry = v ? `${label}:ok` : `${label}:no(${getLastBridgeFailureReason() ?? "?"})`;
+          setBridgeCheckLog((prev) => [...prev, entry]);
+          if (v) setNativeAvailable(true);
+        } catch (err) {
+          setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
+        }
+      };
+      check("t0");
+      const t1 = setTimeout(() => check("t500"), 500);
+      const t2 = setTimeout(() => check("t1500"), 1500);
+      const t3 = setTimeout(() => check("t4000"), 4000);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     }, []);
 
   // Diagnostica temporanea (vedi nativeGeolocation.ts): mostra perché
