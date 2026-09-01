@@ -226,7 +226,18 @@ export default function LocationSettingsPage() {
     setBridgeCheckLog((prev) => [...prev, `${label}:eccezione(${err instanceof Error ? err.message : String(err)})`]);
   }
 };
+      const checkInline = async (label: string) => {
+        try {
+          const core = await import("@capacitor/core");
+          const isNative = core.Capacitor.isNativePlatform();
+          const plugin = isNative ? core.registerPlugin("NativeBridge") : null;
+          setBridgeCheckLog((prev) => [...prev, `${label}:inline(nativo=${isNative},plugin=${!!plugin})`]);
+        } catch (err) {
+          setBridgeCheckLog((prev) => [...prev, `${label}:inline-eccezione(${err instanceof Error ? err.message : String(err)})`]);
+        }
+      };
       check("t0");
+      checkInline("i0");
       const t1 = setTimeout(() => check("t500"), 500);
       const t2 = setTimeout(() => check("t1500"), 1500);
       const t3 = setTimeout(() => check("t4000"), 4000);
