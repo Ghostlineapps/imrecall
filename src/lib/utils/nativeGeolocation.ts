@@ -41,7 +41,13 @@ export async function ensureNativeLocationPermission(): Promise<void> {
 // tutte le funzioni sono no-op sicuri.
 
 interface NativeBridgePlugin {
-  setSession(options: { accessToken: string; refreshToken: string; expiresAt: number }): Promise<void>;
+  setSession(options: {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  }): Promise<void>;
   clearSession(): Promise<void>;
   requestBackgroundLocationPermission(): Promise<{ granted: boolean }>;
   startTracking(): Promise<void>;
@@ -92,6 +98,8 @@ try {
     accessToken: session.access_token,
     refreshToken: session.refresh_token,
     expiresAt: session.expires_at ?? 0,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   });
 } catch {
   // Non bloccante: se il salvataggio fallisce, il tracking nativo resta
