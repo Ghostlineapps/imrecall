@@ -17,11 +17,11 @@ export async function ensureNativeLocationPermission(): Promise<void> {
     requested = true;
 
     try {
-          const { Capacitor } = await import("@capacitor/core");
-          if (!Capacitor.isNativePlatform()) return;
+        const core = await import("@capacitor/core");
+        if (!core.Capacitor.isNativePlatform()) return;
 
-          const { Geolocation } = await import("@capacitor/geolocation");
-          await Geolocation.requestPermissions();
+        const geoModule = await import("@capacitor/geolocation");
+        await geoModule.Geolocation.requestPermissions();
     } catch {
           // Se il modulo non è disponibile (build web, non nativa) o la richiesta
           // fallisce, non blocchiamo nulla: le chiamate a navigator.geolocation
@@ -96,12 +96,12 @@ async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
     if (cachedBridge) return cachedBridge;
 
     try {
-          const { Capacitor, registerPlugin } = await import("@capacitor/core");
-          if (!Capacitor.isNativePlatform()) {
-                  lastBridgeFailureReason = `isNativePlatform=false (platform=${Capacitor.getPlatform()})`;
-                  return null;
-          }
-          const plugin = registerPlugin<NativeBridgePlugin>("NativeBridge");
+       const core = await import("@capacitor/core");
+        if (!core.Capacitor.isNativePlatform()) {
+            lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
+            return null;
+        }
+        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
           if (!plugin) {
                   lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
                   return null;
