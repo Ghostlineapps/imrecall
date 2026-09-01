@@ -52,6 +52,7 @@ interface NativeBridgePlugin {
   startTracking(): Promise<void>;
   stopTracking(): Promise<void>;
   requestMicrophonePermission(): Promise<{ granted: boolean }>;
+  getTrackingDebugState(): Promise<{ running: boolean; lastError: string | null; lastStartAt: number }>;
 }
 
 let nativeBridgePromise: Promise<NativeBridgePlugin | null> | null = null;
@@ -170,6 +171,29 @@ export async function isNativeTrackingAvailable(): Promise<boolean> {
  * vederlo direttamente nella UI invece di continuare a indovinare alla
  * cieca. Da rimuovere una volta trovata la causa.
  */
+/**
+ * Diagnostica temporanea (vedi TrackingDebugState.java lato nativo):
+ * startNativeTracking() sopra ritorna successo appena Android accetta di
+ * avviare il Foreground Service, non quando è davvero partito — se fallisce
+ * dopo (es. un'eccezione dentro onStartCommand), il lato JS non lo scopre
+ * mai da solo, ed è esattamente per questo che la notifica mancante è stata
+ * così difficile da diagnosticare. Da rimuovere una volta trovata la causa.
+ */
+export async function getTrackingServiceDebugInfo(): Promise<{
+  running: boolean;
+  lastError: string | null;
+  lastStartAt: number;
+} | null> {
+  const bridge = await getNativeBridge();
+  if (!bridge) return null;
+
+  try {
+    return await bridge.getTrackingDebugState();
+  } catch (err) {
+    return { running: false, lastError: err instanceof Error ? err.message : String(err), lastStartAt: 0 };
+  }
+}
+
 export async function getNativeDebugInfo(): Promise<{
   importOk: boolean;
   isNative: boolean | null;
