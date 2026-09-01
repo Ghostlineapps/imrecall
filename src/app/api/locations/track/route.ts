@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { reverseGeocode } from "@/lib/utils/geocoding";
 
-// Salva una singola posizione GPS inviata dal browser durante il tracciamento live.
+// Insiemi ammessi per "source": oltre al vecchio "live" (tab browser in
+// foreground), il servizio nativo Android distingue un fix rado durante lo
+// spostamento da una sosta confermata — vedi LocationTrackingService lato
+// nativo e il piano tecnico sul tracking adattivo.
+const ALLOWED_SOURCES = new Set(["live", "live_sparse", "live_stop"]);
+
+// Salva una singola posizione GPS inviata dal browser o dal servizio nativo
+// Android durante il tracciamento.
 export async function POST(req: NextRequest) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Bearer token oltre ai cookie: il tracking nativo in background non ha
+  // una WebView — vedi getAuthenticatedUser in lib/supabase/server.ts.
+  const { supabase, user } = await getAuthenticatedUser(req);
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { latitude, longitude, accuracy, recorded_at } = body;
+  const { latitude, longitude, accuracy, recorded_at, source } = body;
 
   if (typeof latitude !== "number" || typeof longitude !== "number") {
     return NextResponse.json({ error: "invalid_coordinates" }, { status: 400 });
   }
+
+  const resolvedSource = ALLOWED_SOURCES.has(source) ? source : "live";
 
   // Traduciamo subito in un nome di luogo leggibile, così "I tuoi ultimi
   // spostamenti" mostra "Via Roma 12, Milano" invece delle sole coordinate.
@@ -29,7 +37,7 @@ export async function POST(req: NextRequest) {
     longitude,
     accuracy: typeof accuracy === "number" ? accuracy : null,
     place_name,
-    source: "live",
+    source: resolvedSource,
     recorded_at: recorded_at ?? new Date().toISOString(),
   });
 
