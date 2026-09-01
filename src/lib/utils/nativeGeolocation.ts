@@ -56,6 +56,7 @@ interface NativeBridgePlugin {
 }
 
 let cachedBridge: NativeBridgePlugin | null = null;
+let inFlightBridge: Promise<NativeBridgePlugin | null> | null = null;
 
 // Diagnostica temporanea (2026-09-01, round 2): dopo aver tolto la cache
 // permanente del fallimento (vedi sotto), sul telefono di test
@@ -95,25 +96,51 @@ export function getLastBridgeFailureReason(): string | null {
 async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
     if (cachedBridge) return cachedBridge;
 
-    try {
-       const core = await import("@capacitor/core");
-        if (!core.Capacitor.isNativePlatform()) {
-            lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
+    // 2026-09-01, round 3: trovata la causa reale del blocco infinito — questa
+    // funzione veniva chiamata quasi nello stesso istante da due punti diversi
+    // (il layout dell'app tramite useNativeSessionBridge, e questa pagina),
+    // entrambi con cachedBridge ancora vuoto: ognuno ripartiva da zero con un
+    // proprio "await import(...)" invece di condividere lo stesso tentativo.
+    // Ora una seconda chiamata mentre la prima è ancora in corso aspetta lo
+    // stesso risultato invece di ripartire. Aggiunto anche un timeout di
+    // sicurezza: se anche questo dovesse un giorno bloccarsi, la funzione
+    // fallisce dopo pochi secondi invece di restare bloccata per sempre.
+    if (inFlightBridge) return inFlightBridge;
+
+    inFlightBridge = (async (): Promise<NativeBridgePlugin | null> => {
+        try {
+            const timeoutMarker = Symbol("timeout");
+            const timeout = new Promise<typeof timeoutMarker>((resolve) => {
+                setTimeout(() => resolve(timeoutMarker), 3000);
+            });
+            const result = await Promise.race([import("@capacitor/core"), timeout]);
+            if (result === timeoutMarker) {
+                lastBridgeFailureReason = "timeout: import(\"@capacitor/core\") non ha risposto entro 3s";
+                return null;
+            }
+            const core = result as typeof import("@capacitor/core");
+            if (!core.Capacitor.isNativePlatform()) {
+                lastBridgeFailureReason = `isNativePlatform=false (platform=${core.Capacitor.getPlatform()})`;
+                return null;
+            }
+            const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
+            if (!plugin) {
+                lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
+                return null;
+            }
+            cachedBridge = plugin;
+            lastBridgeFailureReason = null;
+            return plugin;
+        } catch (err) {
+            lastBridgeFailureReason =
+                "eccezione: " + (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
             return null;
+        } finally {
+            inFlightBridge = null;
         }
-        const plugin = core.registerPlugin<NativeBridgePlugin>("NativeBridge");
-          if (!plugin) {
-                  lastBridgeFailureReason = "registerPlugin ha ritornato un valore vuoto";
-                  return null;
-          }
-          cachedBridge = plugin;
-          lastBridgeFailureReason = null;
-          return plugin;
-    } catch (err) {
-          lastBridgeFailureReason =
-                  "eccezione: " + (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-          return null;
-    }
+    })();
+
+    return inFlightBridge;
 }
 
 /**
