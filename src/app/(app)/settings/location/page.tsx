@@ -192,16 +192,16 @@ export default function LocationSettingsPage() {
   const [lastPing, setLastPing] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // Dentro l'app nativa Android il tracciamento gira in un Foreground
+  // Dentro l'app nativa Android il tracciamento gira in un Foreground
   // Service con geofencing + campionamento adattivo (vedi
   // nativeGeolocation.ts), non più nel setInterval qui sotto — quello resta
   // solo come fallback per chi usa il sito da un browser desktop/mobile.
   const [nativeAvailable, setNativeAvailable] = useState(false);
-  
+
   useEffect(() => {
     isNativeTrackingAvailable().then(setNativeAvailable);
   }, []);
-  
+
   const { data: locationsData } = useSWR("/api/locations?limit=50", fetcher);
   const locations = locationsData?.locations ?? [];
 
@@ -216,11 +216,44 @@ export default function LocationSettingsPage() {
     if (saved === "true") setTracking(true);
   }, []);
 
+  // Il bottone qui sopra riflette solo una preferenza salvata in
+  // localStorage ("l'utente vuole il tracciamento attivo"), ma il vero
+  // Foreground Service Android che lo esegue davvero può NON essere in
+  // esecuzione anche se questa preferenza dice "true" — es. dopo una
+  // reinstallazione/aggiornamento dell'app, o se Android ha comunque
+  // ucciso il processo. Senza questo effetto l'interfaccia mostrava
+  // "tracciamento attivo" mentre in realtà nessun servizio girava e
+  // nessuna notifica compariva, finché l'utente non disattivava e
+  // riattivava manualmente. Qui, appena il ponte nativo è disponibile, se
+  // la preferenza salvata è "true" ri-avviamo il servizio (le richieste di
+  // permesso già concessi si risolvono subito senza mostrare popup).
+  useEffect(() => {
+    if (!nativeAvailable) return;
+    if (window.localStorage.getItem(TRACKING_STORAGE_KEY) !== "true") return;
+
+    (async () => {
+      const granted = await requestBackgroundLocationPermission();
+      if (!granted) {
+        setTrackingError(
+          "Serve il permesso di posizione \"sempre consentita\" per il tracciamento in background. Abilitalo nelle impostazioni di sistema dell'app."
+        );
+        setTracking(false);
+        window.localStorage.setItem(TRACKING_STORAGE_KEY, "false");
+        return;
+      }
+      const started = await startNativeTracking();
+      if (!started) {
+        setTrackingError("Impossibile riavviare il tracciamento nativo.");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeAvailable]);
+
   useEffect(() => {
     // Su nativo il tracciamento è gestito dal Foreground Service Android
     // (avviato/fermato da toggleTracking), non da questo intervallo nel tab.
     if (nativeAvailable) return;
-    
+
     if (!tracking) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       return;
@@ -289,7 +322,7 @@ export default function LocationSettingsPage() {
         if (!granted) {
           setTrackingError(
             "Serve il permesso di posizione \"sempre consentita\" per il tracciamento in background. Abilitalo nelle impostazioni di sistema dell'app."
-            );
+          );
           return;
         }
         const started = await startNativeTracking();
