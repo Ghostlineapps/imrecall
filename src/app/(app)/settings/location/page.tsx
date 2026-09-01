@@ -9,6 +9,7 @@ import {
     getNativeDebugInfo,
   getTrackingServiceDebugInfo,
   isNativeTrackingAvailable,
+  isNativeTrackingAvailableDirect,
   requestBackgroundLocationPermission,
   startNativeTracking,
   stopNativeTracking,
@@ -236,8 +237,17 @@ export default function LocationSettingsPage() {
           setBridgeCheckLog((prev) => [...prev, `${label}:inline-eccezione(${err instanceof Error ? err.message : String(err)})`]);
         }
       };
+      const checkDirect = async (label: string) => {
+        try {
+          const result = await isNativeTrackingAvailableDirect();
+          setBridgeCheckLog((prev) => [...prev, `${label}:${result}`]);
+        } catch (err) {
+          setBridgeCheckLog((prev) => [...prev, `${label}:direct-eccezione(${err instanceof Error ? err.message : String(err)})`]);
+        }
+      };
       check("t0");
       checkInline("i0");
+      checkDirect("d0");
       const t1 = setTimeout(() => check("t500"), 500);
       const t2 = setTimeout(() => check("t1500"), 1500);
       const t3 = setTimeout(() => check("t4000"), 4000);
