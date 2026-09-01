@@ -55,25 +55,39 @@ interface NativeBridgePlugin {
   getTrackingDebugState(): Promise<{ running: boolean; lastError: string | null; lastStartAt: number }>;
 }
 
-let nativeBridgePromise: Promise<NativeBridgePlugin | null> | null = null;
+let cachedBridge: NativeBridgePlugin | null = null;
 
 // Caricato pigramente e solo su piattaforma nativa: su web @capacitor/core
 // è comunque nel bundle (dipendenza condivisa), ma non c'è alcun plugin
 // nativo "NativeBridge" registrato, quindi ogni chiamata fallirebbe — per
 // questo ogni funzione sotto è avvolta in try/catch e degrada a no-op.
+//
+// BUG CORRETTO (2026-09-01): qui prima si metteva in cache una Promise
+// creata al PRIMO utilizzo, memorizzando per sempre il suo risultato —
+// compreso un eventuale "null" se Capacitor.isNativePlatform() risultava
+// false in quel primo istante (es. una minima corsa all'avvio, più
+// probabile caricando contenuto remoto via server.url invece di asset
+// locali impacchettati). Una volta memorizzato "null", TUTTE le funzioni
+// sotto (avvio tracciamento, permessi, diagnostica) restavano bloccate sul
+// vecchio tracciamento da browser per l'intera sessione della pagina, anche
+// se Capacitor diventava disponibile un istante dopo — combaciando esattamente
+// coi sintomi osservati (nessuna notifica, nessun servizio avviato, "impossibile
+// ottenere la posizione"), mentre un controllo diagnostico separato e non
+// in cache (getNativeDebugInfo) risultava correttamente "nativo:true". Ora
+// mettiamo in cache solo un successo: un fallimento non blocca i tentativi
+// successivi.
 async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
-  if (!nativeBridgePromise) {
-    nativeBridgePromise = (async () => {
-      try {
-        const { Capacitor, registerPlugin } = await import("@capacitor/core");
-        if (!Capacitor.isNativePlatform()) return null;
-        return registerPlugin<NativeBridgePlugin>("NativeBridge");
-      } catch {
-        return null;
-      }
-    })();
+  if (cachedBridge) return cachedBridge;
+
+  try {
+    const { Capacitor, registerPlugin } = await import("@capacitor/core");
+    if (!Capacitor.isNativePlatform()) return null;
+    const plugin = registerPlugin<NativeBridgePlugin>("NativeBridge");
+    cachedBridge = plugin;
+    return plugin;
+  } catch {
+    return null;
   }
-  return nativeBridgePromise;
 }
 
 /**
