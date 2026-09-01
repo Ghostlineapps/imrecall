@@ -102,6 +102,23 @@ async function getNativeBridge(): Promise<NativeBridgePlugin | null> {
       }
 }
 
+// Diagnostica temporanea (round 5): come checkInline in page.tsx (che ha
+// sempre funzionato), ma vive qui in nativeGeolocation.ts e non tocca
+// affatto cachedBridge/lastBridgeFailureReason. Se questa funziona mentre
+// isNativeTrackingAvailable() no, il problema e' proprio quella variabile
+// condivisa (letta/scritta anche da pushSupabaseSession chiamata dal
+// layout su ogni pagina), non il fatto di stare in questo file.
+export async function isNativeTrackingAvailableDirect(): Promise<string> {
+    try {
+        const core = await import("@capacitor/core");
+        const isNative = core.Capacitor.isNativePlatform();
+        const plugin = isNative ? core.registerPlugin<NativeBridgePlugin>("NativeBridge") : null;
+        return `diretto(nativo=${isNative},plugin=${!!plugin})`;
+    } catch (err) {
+        return `diretto-eccezione(${err instanceof Error ? err.message : String(err)})`;
+    }
+}
+
 /**
  * Da chiamare dopo login e dopo ogni refresh automatico della sessione
   * Supabase (vedi useNativeSessionBridge): passa access/refresh token al
