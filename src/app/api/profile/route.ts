@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("dietary_preferences, interests, monthly_budget")
+    .select("dietary_preferences, interests, monthly_budget, onboarding_completed")
     .eq("id", user.id)
     .single();
 
@@ -24,6 +24,10 @@ export async function GET() {
     dietary_preferences: profile?.dietary_preferences ?? [],
     interests: profile?.interests ?? [],
     monthly_budget: profile?.monthly_budget ?? null,
+    // 2026-09-02: usato da useOnboardingGate per capire se un utente è
+    // nuovo (mai completato /onboarding) — vedi quel hook e la migration
+    // 029 per il backfill degli utenti già esistenti.
+    onboarding_completed: profile?.onboarding_completed ?? true,
   });
 }
 
@@ -48,6 +52,11 @@ export async function PATCH(req: NextRequest) {
   }
   if (Array.isArray(body.interests)) {
     update.interests = body.interests.filter((v: unknown) => INTEREST_VALUES.includes(v as string));
+  }
+  // Impostato da /onboarding al termine del wizard (o se l'utente lo salta):
+  // una volta true resta true, il flusso di onboarding non va più mostrato.
+  if (typeof body.onboarding_completed === "boolean") {
+    update.onboarding_completed = body.onboarding_completed;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
