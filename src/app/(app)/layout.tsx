@@ -6,8 +6,12 @@ import { PendingUploadsIndicator } from "@/components/capture/PendingUploadsIndi
 import { useLocationCheckin } from "@/hooks/useLocationCheckin";
 import { useNativeSessionBridge } from "@/hooks/useNativeSessionBridge";
 import { useCaptureQueueSync } from "@/hooks/useCaptureQueueSync";
+import { useOnboardingGate } from "@/hooks/useOnboardingGate";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  // Se l'utente non ha ancora completato /onboarding, lo reindirizza lì
+  // prima di mostrare qualunque altra schermata — vedi il hook.
+  useOnboardingGate();
   useLocationCheckin();
   // Tiene il lato nativo Android (tracking/geofencing in background)
   // aggiornato con la sessione Supabase corrente — vedi il hook per i dettagli.
