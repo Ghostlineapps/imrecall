@@ -1,20 +1,31 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/callback", "/", "/privacy", "/terms"];
-
+// 2026-09-02: src/lib/supabase/server.ts contiene già da tempo un commento
+// che presuppone l'esistenza di questo file ("ignorabile se c'è il
+// middleware a rinfrescare la sessione" nel gestore cookie set/remove) —
+// ma il middleware non era mai stato creato. I Server Component non
+// possono scrivere cookie (limite di Next.js): se l'access token era
+// scaduto, veniva sì rinfrescato per quel singolo render, ma il nuovo
+// token non veniva MAI salvato nei cookie del browser (il set/remove in
+// server.ts fallisce silenziosamente in quel contesto). Alla richiesta
+// successiva il browser rimandava ancora il vecchio cookie scaduto, e il
+// ciclo si ripeteva. Nell'app nativa Android — che carica pagine reali dal
+// server (non è una SPA pura) — questo si manifestava come login richiesto
+// "ogni tanto", tipicamente dopo che l'app era rimasta in background
+// abbastanza a lungo da far scadere l'access token (~1 ora).
+//
+// Questo middleware gira su ogni richiesta reale al server (vedi matcher
+// sotto) e chiama supabase.auth.getUser(): se l'access token è scaduto ma
+// il refresh token è ancora valido, la libreria lo rinnova da sola, e
+// stavolta il nuovo token viene effettivamente salvato nei cookie della
+// risposta grazie ai gestori set/remove qui sotto (che, a differenza di
+// quelli in server.ts, girano in un contesto dove scrivere cookie è
+// permesso).
 export async function middleware(request: NextRequest) {
-  // Le route API gestiscono da sole l'autenticazione (supabase.auth.getUser()
-  // dentro ogni route handler, con risposta JSON 401 se manca la sessione).
-  // Senza questo bypass, chiamate server-to-server senza cookie di sessione —
-  // come quella di pg_cron verso /api/cron/medications ogni minuto — venivano
-  // reindirizzate silenziosamente alla pagina HTML di /login invece di
-  // arrivare al route handler, e il promemoria farmaco non partiva mai.
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.next({ request });
-  }
-
-  let response = NextResponse.next({ request });
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,38 +36,29 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value;
         },
         set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
           response.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: "", ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
           response.cookies.set({ name, value: "", ...options });
         },
       },
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isPublic = PUBLIC_PATHS.some(
-    (path) => request.nextUrl.pathname === path
-  );
-
-  if (!user && !isPublic) {
-    const redirectUrl = new URL("/login", request.url);
-    redirectUrl.searchParams.set("next", request.nextUrl.pathname);
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
-    return NextResponse.redirect(new URL("/home", request.url));
-  }
+  // IMPORTANTE: non aggiungere logica tra createServerClient e
+  // getUser() — è questa chiamata che innesca il refresh automatico.
+  await supabase.auth.getUser();
 
   return response;
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)",
-  ],
+  // Esclude asset statici e le immagini ottimizzate di Next.js: non hanno
+  // bisogno di un check sessione, ed escluderli evita lavoro inutile su
+  // ogni singolo file statico caricato dalla pagina.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };
