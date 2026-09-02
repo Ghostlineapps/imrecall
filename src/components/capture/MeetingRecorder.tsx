@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { Users, Square, CheckCircle2 } from "lucide-react";
 import { mutate } from "swr";
+import { useCaptureQueueStore } from "@/stores/captureQueueStore";
+import { uploadCapture, UploadError } from "@/lib/uploadCapture";
 
 // Stesso schema di AudioRecorder.tsx, ma pensato per registrazioni lunghe
 // (riunioni/call), non note vocali brevi: timer in HH:MM:SS invece di
@@ -43,6 +45,9 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [detectedMessage, setDetectedMessage] = useState<string | null>(null);
+  // Mostrato quando la registrazione è salva in coda offline (upload
+  // fallito per rete, ma non persa) invece che quando è un errore vero.
+  const [notice, setNotice] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -154,59 +159,60 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
         );
         return;
       }
-      await uploadMeeting(blob);
+      await saveAndUploadMeeting(blob);
     };
     recorder.stop();
   }
 
-  async function uploadMeeting(blob: Blob) {
+  // 2026-09-02: stessa logica di AudioRecorder.tsx — la registrazione viene
+  // salvata PRIMA in coda offline (IndexedDB), poi si prova l'upload. Per
+  // una riunione, che spesso è il contenuto più importante da non perdere,
+  // questo è ancora più critico che per una nota vocale breve. Vedi
+  // src/lib/offlineQueue.ts e src/stores/captureQueueStore.ts.
+  async function saveAndUploadMeeting(blob: Blob) {
     setUploading(true);
     setError(null);
+    setNotice(null);
+
+    const queueId = await useCaptureQueueStore.getState().enqueue("meeting", blob, seconds);
+
     try {
-      const formData = new FormData();
-      formData.append("file", blob, "meeting.webm");
-      formData.append("duration", String(seconds));
-
-      const res = await fetch("/api/upload/meeting", { method: "POST", body: formData });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data?.error === "duration_exceeded") {
-          const maxMin = Math.round((data.max ?? 0) / 60);
-          throw new Error(`Registrazione troppo lunga per il tuo piano (massimo ${maxMin} minuti).`);
-        }
-        if (data?.error === "monthly_minutes_exceeded") {
-          throw new Error(
-            `Hai esaurito i minuti di trascrizione di questo mese (${data.max_minutes} min). Riprova il mese prossimo o passa a un piano superiore.`
-          );
-        }
-        if (data?.error === "limit_reached") {
-          throw new Error(`Hai raggiunto il limite di ${data.limit} memorie questo mese.`);
-        }
-        if (data?.error === "file_too_large") {
-          throw new Error(`File troppo grande (massimo ${data.max_mb} MB).`);
-        }
-        throw new Error("upload_failed");
-      }
-
-      const data = await res.json();
+      const data = await uploadCapture("meeting", blob, seconds);
+      if (queueId) await useCaptureQueueStore.getState().markUploaded(queueId);
       mutate("/api/memories");
 
-      if (data?.detected?.type === "appointment") {
+      const detected = data?.detected as { type?: string; title?: string } | undefined;
+      if (detected?.type === "appointment") {
         mutate("/api/appointments");
-        setDetectedMessage(`Appuntamento creato: ${data.detected.title}`);
-      } else if (data?.detected?.type === "deadline") {
+        setDetectedMessage(`Appuntamento creato: ${detected.title}`);
+      } else if (detected?.type === "deadline") {
         mutate("/api/deadlines");
-        setDetectedMessage(`Scadenza creata: ${data.detected.title}`);
+        setDetectedMessage(`Scadenza creata: ${detected.title}`);
       }
 
-      if (data?.detected) {
+      if (detected) {
         setTimeout(onSaved, 1800);
       } else {
         onSaved();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Caricamento fallito. Controlla la connessione e riprova.");
+      if (err instanceof UploadError && err.permanent) {
+        if (queueId) await useCaptureQueueStore.getState().markUploaded(queueId);
+        setError(err.userMessage);
+      } else {
+        // Errore transitorio (rete): la registrazione della riunione resta
+        // al sicuro in coda — è esattamente il caso che più preoccupa
+        // (perdere una call di lavoro importante), quindi il messaggio è
+        // esplicito che NON è andata persa.
+        setNotice(
+          queueId
+            ? "Connessione debole: la registrazione della riunione è salvata e verrà caricata automaticamente appena possibile."
+            : err instanceof UploadError
+            ? err.userMessage
+            : "Caricamento fallito. Controlla la connessione e riprova."
+        );
+        setTimeout(onSaved, 2000);
+      }
     } finally {
       setUploading(false);
     }
@@ -247,6 +253,7 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
           <CheckCircle2 size={16} /> {detectedMessage}
         </p>
       )}
+      {notice && <p className="text-white/50 text-sm text-center px-4">{notice}</p>}
       {error && <p className="text-urgent text-sm text-center px-4">{error}</p>}
     </div>
   );
