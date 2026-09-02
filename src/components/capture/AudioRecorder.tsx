@@ -4,6 +4,41 @@ import { useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
 import { mutate } from "swr";
 
+// 2026-09-02: due fix precedenti mirati al PERMESSO del microfono non hanno
+// cambiato nulla nel comportamento osservato sul telefono di test, pur
+// avendo il permesso RECORD_AUDIO confermato concesso da Impostazioni.
+// Questo suggerisce che il permesso potrebbe non essere affatto la causa:
+// il blocco try/catch di startRecording avvolgeva SIA getUserMedia SIA la
+// creazione del MediaRecorder con un mimeType fisso
+// ("audio/webm;codecs=opus"), quindi se quel formato non fosse supportato
+// dalla WebView di sistema del telefono, l'eccezione verrebbe comunque
+// mostrata come "Impossibile accedere al microfono" — un messaggio
+// fuorviante che punta al permesso quando il problema reale è un altro.
+// Per questo qui: (1) proviamo più mimeType in ordine con
+// MediaRecorder.isTypeSupported prima di creare il recorder, invece di
+// usarne uno fisso; (2) separiamo i punti di fallimento (permesso vs
+// formato) in errori distinti; (3) aggiungiamo il dettaglio tecnico
+// dell'errore nel messaggio mostrato, cosi se il problema persiste
+// un semplice screenshot basta a capire la causa reale senza dover
+// accedere ai log del telefono.
+function pickSupportedMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return undefined;
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
+  for (const c of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(c)) return c;
+    } catch {
+      // ignora e prova il prossimo
+    }
+  }
+  return undefined;
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}
+
 export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -23,22 +58,9 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
   async function startRecording() {
     setError(null);
     try {
-      // 2026-09-02: la prima versione di questo fix chiamava
-      // ensureNativeMicrophonePermission() importata da
-      // nativeGeolocation.ts. Non ha risolto il bug: nello stesso file, un
-      // commento del 2026-09-01 documenta 8 round di debug del bridge di
-      // posizione in cui è emerso che su questo dispositivo una funzione
-      // che "aspetta" il risultato di un'ALTRA funzione asincrona che a
-      // sua volta usa il plugin nativo NativeBridge a volte non si risolve
-      // MAI — l'utente resta bloccato senza errore visibile ("niente
-      // succede"), non con l'errore mostrato più sotto. La soluzione
-      // adottata allora fu smettere di delegare a helper condivisi e
-      // inlineare la logica dentro ogni funzione chiamante: la applichiamo
-      // anche qui, invece di richiamare l'helper. In più, per sicurezza,
-      // mettiamo un timeout di guardia: se il plugin nativo non risponde
-      // entro 3s proseguiamo comunque con getUserMedia, che ha un proprio
-      // meccanismo di permesso/errore e non deve restare bloccato in
-      // attesa di un plugin che non risponde.
+      // Richiesta esplicita del permesso nativo, inline (non delegata a un
+      // helper importato da un altro modulo — vedi nativeGeolocation.ts,
+      // commento 2026-09-01, per il perché) con timeout di guardia di 3s.
       try {
         const core = await import("@capacitor/core");
         if (core.Capacitor.isNativePlatform()) {
@@ -53,15 +75,28 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
           }
         }
       } catch {
-        // Non bloccante: su web/PWA il modulo nativo non esiste, e se la
-        // richiesta nativa fallisce lasciamo che sia getUserMedia a
-        // gestire l'esito.
+        // Non bloccante: su web/PWA il modulo nativo non esiste.
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Bitrate basso ma ok per il parlato: tiene il file sotto il limite di
-      // 25MB di Whisper anche per registrazioni lunghe (vedi audio/route.ts).
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32000 });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        throw new Error(
+          `Impossibile accedere al microfono (permesso negato o non disponibile). [${describeError(err)}]`
+        );
+      }
+
+      const mimeType = pickSupportedMimeType();
+      let recorder: MediaRecorder;
+      try {
+        recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 32000 })
+          : new MediaRecorder(stream);
+      } catch (err) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error(`Il telefono non supporta la registrazione audio in questo formato. [${describeError(err)}]`);
+      }
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
@@ -79,9 +114,11 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
         // Non bloccante: se il wake lock non è supportato o viene negato,
         // la registrazione parte comunque.
       }
-    } catch {
+    } catch (err) {
       setError(
-        "Impossibile accedere al microfono. Controlla di aver concesso il permesso microfono a IMRECALL nelle impostazioni del telefono/browser."
+        err instanceof Error
+          ? err.message
+          : "Impossibile accedere al microfono. Controlla di aver concesso il permesso microfono a IMRECALL nelle impostazioni del telefono/browser."
       );
     }
   }
