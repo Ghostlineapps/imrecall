@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { MapPin, Compass, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
+import { isGeoPermissionKnownGranted, markGeoPermissionGranted } from "@/lib/utils/geoPermission";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -36,9 +37,17 @@ function labelFor(category: string) {
 // a differenza del check-in, deve comunque mostrare qualcosa: nel
 // frattempo ripieghiamo sull'ultimo punto noto da /api/locations.
 // Se il permesso è già "granted" in modo definitivo, invece, richiedere la
-// posizione non mostra alcun prompt e possiamo farlo ad ogni apertura senza
-// penalizzare la freschezza dei suggerimenti.
-const GEO_COOLDOWN_MS = 1000 * 60 * 60; // 1 ora
+// posizione non mostra alcun prompt: niente più cooldown, la richiediamo
+// ad ogni apertura E la aggiorniamo da sola ogni GEO_AUTO_REFRESH_MS
+// mentre l'app resta aperta (vedi startAutoRefresh sotto). Aggiunto
+// 2026-09-03: prima, restando con l'app aperta senza mai toccarla, "nei
+// paraggi" restava fermo alla posizione del primo avvio finché non si
+// faceva tap manualmente sulla posizione attuale — su iOS in particolare,
+// perché navigator.permissions.query per la geolocalizzazione non è
+// affidabile in Safari e quindi si ricadeva quasi sempre sul solo
+// cooldown.
+const GEO_COOLDOWN_MS = 1000 * 60 * 60; // 1 ora, solo prima del primo grant
+const GEO_AUTO_REFRESH_MS = 1000 * 60 * 5; // 5 minuti, dopo il grant
 const GEO_STORAGE_KEY = "imrecall_nearby_geo_at";
 
 /**
@@ -54,6 +63,7 @@ export function NearbyForYou() {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
     async function fallbackToLastKnown() {
       try {
@@ -66,12 +76,24 @@ export function NearbyForYou() {
       }
     }
 
+    // Una volta ottenuta una posizione con successo, il permesso è concesso
+    // in modo definitivo: da qui in poi ripetiamo la richiesta da soli ogni
+    // GEO_AUTO_REFRESH_MS, senza bisogno che l'utente tocchi nulla.
+    function startAutoRefresh() {
+      if (refreshTimer || cancelled) return;
+      refreshTimer = setInterval(() => {
+        if (!cancelled) requestPosition();
+      }, GEO_AUTO_REFRESH_MS);
+    }
+
     function requestPosition() {
       const markAttempted = () => localStorage.setItem(GEO_STORAGE_KEY, String(Date.now()));
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           markAttempted();
+          markGeoPermissionGranted();
+          startAutoRefresh();
           if (cancelled) return;
           setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
           setLocating(false);
@@ -80,7 +102,7 @@ export function NearbyForYou() {
           markAttempted();
           fallbackToLastKnown();
         },
-        { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+        { timeout: 8000, maximumAge: 2 * 60 * 1000 }
       );
     }
 
@@ -91,6 +113,16 @@ export function NearbyForYou() {
         return;
       }
       requestPosition();
+    }
+
+    // Riprende subito quando si torna sull'app (es. si riaccende lo
+    // schermo, o si torna dalla tab del browser): a permesso già concesso
+    // non costa nulla e copre il caso "l'ho lasciata aperta ma inattiva
+    // per un po'" senza aspettare il prossimo giro di startAutoRefresh.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && isGeoPermissionKnownGranted()) {
+        requestPosition();
+      }
     }
 
     if (!("geolocation" in navigator)) {
@@ -105,6 +137,14 @@ export function NearbyForYou() {
     // e la stessa nota in useLocationCheckin.ts. Su web/PWA non fa nulla.
     ensureNativeLocationPermission().finally(() => {
       if (cancelled) return;
+
+      if (isGeoPermissionKnownGranted()) {
+        // Già sappiamo che il permesso è concesso (grant ottenuto in
+        // questa sessione o in una precedente): nessun bisogno di passare
+        // dalla Permissions API, che su Safari/iOS è comunque inaffidabile.
+        requestPosition();
+        return;
+      }
 
       if ("permissions" in navigator) {
         navigator.permissions
@@ -130,8 +170,12 @@ export function NearbyForYou() {
       }
     });
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       cancelled = true;
+      if (refreshTimer) clearInterval(refreshTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
