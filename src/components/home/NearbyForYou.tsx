@@ -6,6 +6,7 @@ import { MapPin, Compass, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
 import { isGeoPermissionKnownGranted, markGeoPermissionGranted } from "@/lib/utils/geoPermission";
+import { haversineMeters } from "@/lib/utils/geoDistance";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -36,18 +37,29 @@ function labelFor(category: string) {
 // useLocationCheckin.ts, qui applicato allo stesso componente che però,
 // a differenza del check-in, deve comunque mostrare qualcosa: nel
 // frattempo ripieghiamo sull'ultimo punto noto da /api/locations.
+//
 // Se il permesso è già "granted" in modo definitivo, invece, richiedere la
 // posizione non mostra alcun prompt: niente più cooldown, la richiediamo
-// ad ogni apertura E la aggiorniamo da sola ogni GEO_AUTO_REFRESH_MS
-// mentre l'app resta aperta (vedi startAutoRefresh sotto). Aggiunto
-// 2026-09-03: prima, restando con l'app aperta senza mai toccarla, "nei
-// paraggi" restava fermo alla posizione del primo avvio finché non si
-// faceva tap manualmente sulla posizione attuale — su iOS in particolare,
-// perché navigator.permissions.query per la geolocalizzazione non è
-// affidabile in Safari e quindi si ricadeva quasi sempre sul solo
-// cooldown.
+// subito E la teniamo aggiornata con watchPosition (vedi startWatching
+// sotto) finché l'app resta aperta.
+//
+// Aggiunto 2026-09-03: prima, restando con l'app aperta senza mai
+// toccarla, "nei paraggi" restava fermo alla posizione del primo avvio
+// finché non si faceva tap manualmente sulla posizione attuale — su iOS
+// in particolare, perché navigator.permissions.query per la
+// geolocalizzazione non è affidabile in Safari e quindi si ricadeva quasi
+// sempre sul solo cooldown. Una prima versione di questo fix usava un
+// poll fisso ogni 5 minuti; sostituito lo stesso giorno con watchPosition
+// più GEO_MOVE_THRESHOLD_METERS: il browser avvisa lui quando la
+// posizione cambia davvero, invece di ricontrollare a orologio anche da
+// fermi, e con enableHighAccuracy true evitiamo falsi movimenti dovuti al
+// rumore del GPS. GEO_MAX_STALE_MS resta come rete di sicurezza: se per
+// qualche motivo watchPosition non scatena mai un evento "abbastanza
+// diverso" (es. ci si muove sempre sotto soglia), aggiorniamo comunque
+// almeno ogni quarto d'ora.
 const GEO_COOLDOWN_MS = 1000 * 60 * 60; // 1 ora, solo prima del primo grant
-const GEO_AUTO_REFRESH_MS = 1000 * 60 * 5; // 5 minuti, dopo il grant
+const GEO_MOVE_THRESHOLD_METERS = 100; // dopo il grant: aggiorna solo se ti sposti di almeno questo
+const GEO_MAX_STALE_MS = 1000 * 60 * 15; // ...o comunque non più tardi di così, anche da fermo
 const GEO_STORAGE_KEY = "imrecall_nearby_geo_at";
 
 /**
@@ -63,7 +75,9 @@ export function NearbyForYou() {
 
   useEffect(() => {
     let cancelled = false;
-    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let watchId: number | null = null;
+    let lastTriggeredAt = 0;
+    let lastTriggeredCoords: { lat: number; lon: number } | null = null;
 
     async function fallbackToLastKnown() {
       try {
@@ -76,14 +90,45 @@ export function NearbyForYou() {
       }
     }
 
+    function applyPosition(lat: number, lon: number) {
+      lastTriggeredAt = Date.now();
+      lastTriggeredCoords = { lat, lon };
+      localStorage.setItem(GEO_STORAGE_KEY, String(Date.now()));
+      markGeoPermissionGranted();
+      if (cancelled) return;
+      setCoords({ lat, lon });
+      setLocating(false);
+    }
+
+    // Vale la pena aggiornare solo se ci si è spostati abbastanza, o se è
+    // passato troppo tempo dall'ultimo aggiornamento (rete di sicurezza
+    // anche restando fermi).
+    function shouldTrigger(lat: number, lon: number) {
+      if (!lastTriggeredCoords) return true;
+      if (Date.now() - lastTriggeredAt > GEO_MAX_STALE_MS) return true;
+      return haversineMeters(lastTriggeredCoords.lat, lastTriggeredCoords.lon, lat, lon) >= GEO_MOVE_THRESHOLD_METERS;
+    }
+
     // Una volta ottenuta una posizione con successo, il permesso è concesso
-    // in modo definitivo: da qui in poi ripetiamo la richiesta da soli ogni
-    // GEO_AUTO_REFRESH_MS, senza bisogno che l'utente tocchi nulla.
-    function startAutoRefresh() {
-      if (refreshTimer || cancelled) return;
-      refreshTimer = setInterval(() => {
-        if (!cancelled) requestPosition();
-      }, GEO_AUTO_REFRESH_MS);
+    // in modo definitivo: da qui in poi il browser stesso ci avvisa quando
+    // la posizione cambia, senza bisogno che l'utente tocchi nulla né che
+    // ricontrolliamo a orologio.
+    function startWatching() {
+      if (watchId !== null || cancelled) return;
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (cancelled) return;
+          const { latitude, longitude } = pos.coords;
+          if (!shouldTrigger(latitude, longitude)) return;
+          applyPosition(latitude, longitude);
+        },
+        () => {
+          // GPS temporaneamente non disponibile (es. galleria, tunnel): non
+          // è un rifiuto di permesso, teniamo semplicemente l'ultima
+          // posizione buona finché non arriva un fix nuovo.
+        },
+        { enableHighAccuracy: true, maximumAge: 2 * 60 * 1000, timeout: 10000 }
+      );
     }
 
     function requestPosition() {
@@ -92,11 +137,9 @@ export function NearbyForYou() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           markAttempted();
-          markGeoPermissionGranted();
-          startAutoRefresh();
           if (cancelled) return;
-          setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-          setLocating(false);
+          applyPosition(pos.coords.latitude, pos.coords.longitude);
+          startWatching();
         },
         () => {
           markAttempted();
@@ -116,13 +159,24 @@ export function NearbyForYou() {
     }
 
     // Riprende subito quando si torna sull'app (es. si riaccende lo
-    // schermo, o si torna dalla tab del browser): a permesso già concesso
-    // non costa nulla e copre il caso "l'ho lasciata aperta ma inattiva
-    // per un po'" senza aspettare il prossimo giro di startAutoRefresh.
+    // schermo, o si torna dalla tab del browser): su iOS watchPosition può
+    // restare "in pausa" per un po' mentre l'app non è in foreground, quindi
+    // al ritorno forziamo una lettura immediata invece di aspettare il
+    // prossimo evento del watch.
     function handleVisibilityChange() {
-      if (document.visibilityState === "visible" && isGeoPermissionKnownGranted()) {
-        requestPosition();
-      }
+      if (document.visibilityState !== "visible" || !isGeoPermissionKnownGranted()) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          if (shouldTrigger(pos.coords.latitude, pos.coords.longitude)) {
+            applyPosition(pos.coords.latitude, pos.coords.longitude);
+          }
+        },
+        () => {
+          // silenzioso: il watch resta comunque attivo
+        },
+        { maximumAge: 2 * 60 * 1000 }
+      );
     }
 
     if (!("geolocation" in navigator)) {
@@ -174,7 +228,7 @@ export function NearbyForYou() {
 
     return () => {
       cancelled = true;
-      if (refreshTimer) clearInterval(refreshTimer);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
