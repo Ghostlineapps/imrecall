@@ -122,9 +122,28 @@ export async function processMemory(memoryId: string, attempt = 1) {
       }
     }
 
-    // Geocodifica i luoghi menzionati — abilita il resurfacing di prossimità
-    for (const placeName of classification.places ?? []) {
-      await geocodeAndLinkPlace(supabase, memory.user_id, memoryId, placeName);
+    // Geocodifica i luoghi menzionati nel testo — abilita il resurfacing di
+    // prossimità basato su "un luogo di cui hai scritto/parlato". Ha senso
+    // per testo/audio (l'utente descrive un posto in cui È STATO), ma NON
+    // per documento/riunione/link: un indirizzo stampato su un referto o
+    // una fattura è quasi sempre quello di chi ha EMESSO il documento (es.
+    // il laboratorio analisi), non un posto che l'utente ha visitato; una
+    // riunione può avere un indirizzo senza che l'utente ci sia stato di
+    // persona (call, sede altrui); un link salvato (es. un articolo su un
+    // ristorante) non implica esserci mai andato. Collegare comunque questi
+    // tre tipi a un luogo alimentava nearby_memories() con "sei tornato
+    // qui" del tutto slegati dalla posizione reale dell'utente — segnalato
+    // 2026-09-03: un referto di analisi cliniche ha fatto scattare "sei
+    // tornato a Terlizzi (BA)" solo perché il laboratorio ha sede lì,
+    // l'utente non c'era mai stato né al momento del caricamento né prima.
+    // Le foto restano collegate via GPS reale dello scatto
+    // (geocodeAndLinkPlaceByCoords, chiamata altrove), non toccate da
+    // questo filtro.
+    const TYPES_WITHOUT_TEXT_PLACE_LINKING = new Set(["document", "meeting", "link"]);
+    if (!TYPES_WITHOUT_TEXT_PLACE_LINKING.has(memory.type)) {
+      for (const placeName of classification.places ?? []) {
+        await geocodeAndLinkPlace(supabase, memory.user_id, memoryId, placeName);
+      }
     }
   } catch (err) {
     if (attempt < 3) {
