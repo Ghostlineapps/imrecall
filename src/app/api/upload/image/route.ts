@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classification";
+import { reverseGeocodePlaceName } from "@/lib/utils/geocoding";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -48,11 +49,25 @@ function romeOffsetMinutesAt(utcMs: number): number {
   return (romeAsUtcMs - utcMs) / 60000;
 }
 
-function buildVisionPrompt() {
+// placeName arriva dal reverse-geocoding delle coordinate GPS dello scatto
+// (vedi reverseGeocodePlaceName in lib/utils/geocoding.ts), non da Vision:
+// senza questo, la descrizione di una foto scattata alla Reggia di Caserta
+// diceva solo "un maestoso edificio storico" — GPT-4 Vision vede i pixel,
+// non sa dove ti trovavi. È null quando la foto non ha coordinate o il
+// punto non corrisponde a un luogo/locale riconoscibile (es. un dettaglio
+// di un piatto senza nulla di identificabile intorno): in quel caso il
+// prompt resta puramente visivo come prima, invece di inventare un nome.
+function buildVisionPrompt(placeName: string | null) {
   const today = new Date().toISOString().slice(0, 10);
+  const placeContext = placeName
+    ? `\nQuesta foto è stata scattata presso: "${placeName}". Se è pertinente, usa questo nome nella
+descrizione (es. "Reggia di Caserta" invece di "un edificio storico"), ma NON aggiungere altri
+dettagli su questo luogo che non vedi realmente nell'immagine.\n`
+    : "";
 
   return `Oggi è il ${today}. Descrivi questa immagine in italiano in 1-2 frasi. Se contiene testo
 leggibile (documento, cartello, ricevuta, scadenza, conversazione chat), trascrivilo integralmente.
+${placeContext}
 
 Se l'immagine è un documento con una data di scadenza chiaramente visibile
 (bollo, assicurazione, avviso fiscale, abbonamento, patente, carta d'identità,
@@ -145,13 +160,19 @@ export async function POST(req: NextRequest) {
   const { data: signedUrl } = await supabase.storage.from("images").createSignedUrl(path, 60 * 60);
   const base64 = buffer.toString("base64");
 
+  // Vedi buildVisionPrompt: senza questo, foto scattate a un monumento o
+  // locale riconoscibile venivano descritte in modo puramente generico.
+  const placeName = hasCoords
+    ? await reverseGeocodePlaceName(latitude, longitude).catch(() => null)
+    : null;
+
   const visionRes = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: buildVisionPrompt() },
+          { type: "text", text: buildVisionPrompt(placeName) },
           { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" } },
         ],
       },
