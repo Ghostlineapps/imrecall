@@ -61,6 +61,10 @@ const GEO_COOLDOWN_MS = 1000 * 60 * 60; // 1 ora, solo prima del primo grant
 const GEO_MOVE_THRESHOLD_METERS = 100; // dopo il grant: aggiorna solo se ti sposti di almeno questo
 const GEO_MAX_STALE_MS = 1000 * 60 * 15; // ...o comunque non più tardi di così, anche da fermo
 const GEO_STORAGE_KEY = "imrecall_nearby_geo_at";
+// Poll indipendente da watchPosition — vedi il commento sopra
+// fallbackPollId più sotto per il perché serve anche con watchPosition già
+// attivo.
+const GEO_FALLBACK_POLL_MS = 1000 * 60 * 3;
 
 /**
  * "Nei tuoi paraggi": la risposta concreta a "cosa fa per semplificare la
@@ -226,10 +230,39 @@ export function NearbyForYou() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
+    // Rete di sicurezza VERA contro watchPosition: GEO_MAX_STALE_MS sopra
+    // controlla "è passato troppo tempo?" solo dentro alla callback del
+    // watch — se il sistema operativo smette di richiamarla del tutto (e
+    // su iOS capita spesso, anche con l'app aperta e a schermo acceso, per
+    // risparmio energetico), quel controllo non scatta mai e la posizione
+    // resta ferma finché non si tocca manualmente "aggiorna posizione".
+    // Segnalato 2026-09-05: ancora necessario l'aggiornamento manuale su
+    // iOS nonostante watchPosition, incluso mentre "Nei tuoi paraggi"
+    // cercava consigli intorno alla posizione vecchia invece di quella
+    // reale. Questo intervallo non sostituisce watchPosition (che resta
+    // più reattivo ai movimenti reali) ma forza comunque una lettura ogni
+    // pochi minuti, indipendentemente da eventuali silenzi del watch.
+    const fallbackPollId = setInterval(() => {
+      if (cancelled || !isGeoPermissionKnownGranted()) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          if (shouldTrigger(pos.coords.latitude, pos.coords.longitude)) {
+            applyPosition(pos.coords.latitude, pos.coords.longitude);
+          }
+        },
+        () => {
+          // silenzioso: watchPosition resta comunque attivo
+        },
+        { maximumAge: 60 * 1000, timeout: 10000 }
+      );
+    }, GEO_FALLBACK_POLL_MS);
+
     return () => {
       cancelled = true;
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(fallbackPollId);
     };
   }, []);
 
