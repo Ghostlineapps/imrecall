@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Plus, HeartPulse } from "lucide-react";
+import Link from "next/link";
+import { Plus, HeartPulse, Droplet, ChevronRight } from "lucide-react";
 import { MemoryCard } from "@/components/timeline/MemoryCard";
 import { CaptureSheet } from "@/components/capture/CaptureSheet";
 
@@ -48,6 +49,24 @@ export default function HealthPage() {
         <Plus size={18} />
         Aggiungi referto o farmaco
       </button>
+
+      {/* Punto d'ingresso al ciclo (migrazione 031) — non una nuova
+          categorizzazione dei ricordi come il resto di questa pagina, per
+          questo è un link a una sezione a sé (/health/cycle) invece di un
+          filtro qui dentro, sullo stesso principio di Gravidanza. */}
+      <Link
+        href="/health/cycle"
+        className="card-light flex items-center gap-3 hover:bg-celeste-navy/[0.02] transition-colors"
+      >
+        <span className="w-9 h-9 rounded-full bg-celeste-accent/10 flex items-center justify-center shrink-0">
+          <Droplet size={18} className="text-celeste-accentDark" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-celeste-navy">Ciclo</p>
+          <p className="text-xs text-celeste-muted mt-0.5">Previsioni, sintomi e correlazioni con i tuoi ricordi.</p>
+        </div>
+        <ChevronRight size={18} className="text-celeste-muted shrink-0" />
+      </Link>
 
       {isLoading && (
         <div className="space-y-2">
