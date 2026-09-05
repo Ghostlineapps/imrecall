@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { reverseGeocode } from "@/lib/utils/geocoding";
+import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 // Quanti punti senza nome del luogo "ripariamo" ad ogni caricamento della
 // lista. Punti nuovi (live/checkin) hanno già place_name dal momento
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   if (missing.length > 0) {
     await Promise.all(
       missing.map(async (loc) => {
-        const name = await reverseGeocode(loc.latitude, loc.longitude).catch(() => null);
+        const name = await reverseGeocodeBestName(loc.latitude, loc.longitude).catch(() => null);
         if (name) {
           loc.place_name = name;
           await supabase.from("location_checkins").update({ place_name: name }).eq("id", loc.id);
