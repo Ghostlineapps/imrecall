@@ -117,3 +117,38 @@ export async function reverseGeocodePlaceName(
     return null;
   }
 }
+
+/**
+ * Nome "migliore disponibile" per una coppia di coordinate: prova prima
+ * reverseGeocodePlaceName() (il nome del locale/monumento, es. "Reggia di
+ * Caserta"), e solo se non c'è un punto d'interesse riconoscibile ripiega
+ * sull'indirizzo generico di reverseGeocode() (es. "Via Roma 12, Milano").
+ *
+ * Prima di questa funzione, il check-in di posizione (/api/checkin,
+ * /api/locations/track) e il collegamento foto→luogo
+ * (geocodeAndLinkPlaceByCoords) chiamavano solo reverseGeocode(): il
+ * risultato finiva salvato in `places`/`location_checkins` come indirizzo
+ * generico anche quando le coordinate erano proprio quelle di un locale
+ * riconoscibile — segnalato 2026-09-06: una foto scattata alla Reggia di
+ * Caserta veniva collegata al luogo "Piazza Carlo III di Borbone, Caserta"
+ * (la piazza più vicina) invece che "Reggia di Caserta", quindi i
+ * promemoria di prossimità ("sei tornato a...") e lo storico spostamenti
+ * mostravano la via invece del nome del posto — anche se la sola didascalia
+ * AI della foto (che usa reverseGeocodePlaceName direttamente, non questa
+ * funzione) lo mostrava già correttamente.
+ *
+ * Nota: i luoghi già salvati con il nome generico (prima di questo fix) non
+ * vengono corretti retroattivamente — il matching in geocodeAndLinkPlace* è
+ * per nome, non per coordinate, quindi una nuova foto/check-in nello stesso
+ * punto crea semplicemente una nuova riga con il nome corretto invece di
+ * aggiornare quella vecchia. Le righe vecchie restano rimovibili a mano da
+ * Impostazioni → Luoghi.
+ */
+export async function reverseGeocodeBestName(
+  latitude: number,
+  longitude: number
+): Promise<string | null> {
+  const poiName = await reverseGeocodePlaceName(latitude, longitude);
+  if (poiName) return poiName;
+  return reverseGeocode(latitude, longitude);
+}
