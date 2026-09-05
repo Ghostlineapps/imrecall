@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { reverseGeocode } from "@/lib/utils/geocoding";
+import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 // Risponde a "dove mi trovavo il [data] alle [ora]?": trova il punto di
 // posizione registrato più vicino nel tempo al momento richiesto (prima o
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     return diff < bestDiff ? c : best;
   });
 
-  const placeName = closest.place_name || (await reverseGeocode(closest.latitude, closest.longitude));
+  const placeName = closest.place_name || (await reverseGeocodeBestName(closest.latitude, closest.longitude));
   const diffMinutes = Math.round(
     Math.abs(new Date(closest.recorded_at).getTime() - target.getTime()) / 60000
   );
