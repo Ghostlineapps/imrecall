@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { reverseGeocode } from "@/lib/utils/geocoding";
+import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 /**
  * Chiamato all'apertura dell'app (non background tracking — vedi nota nel
@@ -30,8 +30,10 @@ export async function POST(req: NextRequest) {
 
   // Anche qui traduciamo subito in un nome di luogo leggibile (vedi
   // /api/locations/track): questo endpoint scatta solo all'apertura
-  // dell'app, quindi il volume di richieste resta basso.
-  const place_name = await reverseGeocode(latitude, longitude).catch(() => null);
+  // dell'app, quindi il volume di richieste resta basso. reverseGeocodeBestName
+  // preferisce il nome del locale/monumento quando riconoscibile (fix
+  // 2026-09-06: vedi geocoding.ts), invece del solo indirizzo generico.
+  const place_name = await reverseGeocodeBestName(latitude, longitude).catch(() => null);
   await supabase.from("location_checkins").insert({ user_id: user.id, latitude, longitude, place_name });
 
   const [{ data: intentions }, { data: memories }] = await Promise.all([
