@@ -35,6 +35,13 @@ const CHECKIN_COOLDOWN_MS = 1000 * 60 * 60 * 6; // pre-grant, invariato
 const CHECKIN_MOVE_THRESHOLD_METERS = 100; // post-grant: check-in solo se ti sposti di almeno questo
 const CHECKIN_MAX_STALE_MS = 1000 * 60 * 15; // ...o comunque non più tardi di così, anche da fermo
 const CHECKIN_STORAGE_KEY = "imrecall_checkin_at";
+// Poll indipendente da watchPosition, stessa ragione di NearbyForYou.tsx:
+// CHECKIN_MAX_STALE_MS scatta solo dentro alla callback del watch, quindi
+// non aiuta se iOS smette di richiamarla del tutto (osservato più volte,
+// anche ad app aperta e schermo acceso — segnalato 2026-09-05, "devo
+// sempre aggiornare manualmente la posizione"). Questo intervallo forza
+// comunque un tentativo di check-in ogni pochi minuti.
+const CHECKIN_FALLBACK_POLL_MS = 1000 * 60 * 3;
 
 /**
  * Richiede la posizione e la invia a /api/checkin per generare eventuali
@@ -159,10 +166,27 @@ export function useLocationCheckin() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
+    const fallbackPollId = setInterval(() => {
+      if (cancelled || !isGeoPermissionKnownGranted()) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          if (shouldTriggerCheckin(pos.coords.latitude, pos.coords.longitude)) {
+            sendCheckin(pos.coords.latitude, pos.coords.longitude);
+          }
+        },
+        () => {
+          // silenzioso: watchPosition resta comunque attivo
+        },
+        { maximumAge: 60 * 1000, timeout: 10000 }
+      );
+    }, CHECKIN_FALLBACK_POLL_MS);
+
     return () => {
       cancelled = true;
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(fallbackPollId);
     };
   }, []);
 }
