@@ -77,3 +77,43 @@ export async function reverseGeocode(
     return null;
   }
 }
+
+/**
+ * Nome del punto d'interesse (monumento, ristorante, negozio...) alle
+ * coordinate date, se Nominatim ne riconosce uno — a differenza di
+ * reverseGeocode() sopra, che restituisce sempre un indirizzo generico
+ * ("Via Roma 12, Milano") e non è pensato per riconoscere un luogo
+ * specifico. Usata per arricchire la didascalia AI delle foto: senza
+ * questo, la descrizione di una foto scattata alla Reggia di Caserta
+ * diceva solo "un maestoso edificio storico" — GPT-4 Vision vede i pixel,
+ * non sa dove si trova lo scatto, e le coordinate GPS della foto non
+ * venivano mai passate al prompt (segnalato 2026-09-05).
+ *
+ * zoom=18 (contro il 17 di reverseGeocode) per restare a livello di
+ * singolo edificio/esercizio invece che di isolato. Filtriamo per classe:
+ * "building" e "highway" quasi sempre restituiscono un nome inutile (un
+ * numero civico, il nome della via) anche quando presente, quindi non
+ * contano come luogo riconosciuto — meglio nessun nome che uno fuorviante.
+ */
+const POI_CLASSES = new Set(["tourism", "amenity", "shop", "leisure", "historic", "office", "natural"]);
+
+export async function reverseGeocodePlaceName(
+  latitude: number,
+  longitude: number
+): Promise<string | null> {
+  try {
+    const url = `${NOMINATIM_BASE}/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&namedetails=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, "Accept-Language": "it" },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data?.error || !data?.name) return null;
+
+    return POI_CLASSES.has(data.class) ? data.name : null;
+  } catch (err) {
+    console.error("Reverse geocoding (nome luogo) fallito per", latitude, longitude, err);
+    return null;
+  }
+}
