@@ -1,5 +1,6 @@
 import { TodayCard } from "@/components/home/TodayCard";
 import { MedicationsTodayCard } from "@/components/home/MedicationsTodayCard";
+import { CycleTodayCard } from "@/components/home/CycleTodayCard";
 import { StreakBadge } from "@/components/home/StreakBadge";
 import { NearbyForYou } from "@/components/home/NearbyForYou";
 import { LocationStatusCard } from "@/components/home/LocationStatusCard";
@@ -91,6 +92,11 @@ export default async function HomePage() {
               arriva anche via notifica push puntuale, vedi
               /api/cron/medications e BACKLOG.md. */}
           <MedicationsTodayCard />
+
+          {/* Ciclo — vedi migrazione 031: card visibile anche prima
+              dell'onboarding (invito), non solo a chi già traccia, per lo
+              stesso motivo di visibilità spiegato in CycleTodayCard.tsx. */}
+          <CycleTodayCard />
 
           <NearbyForYou />
 
