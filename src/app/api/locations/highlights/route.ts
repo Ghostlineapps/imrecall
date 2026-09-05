@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { reverseGeocode } from "@/lib/utils/geocoding";
+import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 // Usato dal wizard di onboarding (/onboarding) subito dopo un import di
 // spostamenti (Google Maps o foto): peschiamo fino a 3 punti "sparsi" nel
@@ -60,7 +60,7 @@ export async function GET() {
   // chiamate, e Nominatim chiede comunque un uso "leggero".
   const highlights = [];
   for (const row of rows) {
-    const placeName = row.place_name || (await reverseGeocode(row.latitude, row.longitude));
+    const placeName = row.place_name || (await reverseGeocodeBestName(row.latitude, row.longitude));
     highlights.push({
       recorded_at: row.recorded_at,
       place_name: placeName,
