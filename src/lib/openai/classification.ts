@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "./embeddings";
-import { geocodePlace, reverseGeocode } from "@/lib/utils/geocoding";
+import { geocodePlace, reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -220,7 +220,11 @@ export async function geocodeAndLinkPlaceByCoords(
   latitude: number,
   longitude: number
 ) {
-  const placeName = await reverseGeocode(latitude, longitude);
+  // reverseGeocodeBestName invece del solo reverseGeocode: preferisce il
+  // nome del locale/monumento quando le coordinate corrispondono a un punto
+  // d'interesse riconoscibile (vedi il commento su reverseGeocodeBestName
+  // in lib/utils/geocoding.ts — fix 2026-09-06).
+  const placeName = await reverseGeocodeBestName(latitude, longitude);
   if (!placeName) return;
 
   const normalized = placeName.toLowerCase().trim();
