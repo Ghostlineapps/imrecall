@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { reverseGeocode } from "@/lib/utils/geocoding";
+import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
 
 // Insiemi ammessi per "source": oltre al vecchio "live" (tab browser in
 // foreground), il servizio nativo Android distingue un fix rado durante lo
@@ -26,10 +26,13 @@ export async function POST(req: NextRequest) {
   const resolvedSource = ALLOWED_SOURCES.has(source) ? source : "live";
 
   // Traduciamo subito in un nome di luogo leggibile, così "I tuoi ultimi
-  // spostamenti" mostra "Via Roma 12, Milano" invece delle sole coordinate.
-  // Il tracciamento live scrive al massimo ogni 10 minuti, quindi una
-  // richiesta a Nominatim per punto resta ben dentro il limite d'uso.
-  const place_name = await reverseGeocode(latitude, longitude).catch(() => null);
+  // spostamenti" mostra "Via Roma 12, Milano" invece delle sole coordinate
+  // — o, quando le coordinate corrispondono a un locale/monumento
+  // riconoscibile, il suo nome vero (reverseGeocodeBestName, fix
+  // 2026-09-06: vedi geocoding.ts). Il tracciamento live scrive al massimo
+  // ogni 10 minuti, quindi una richiesta a Nominatim per punto resta ben
+  // dentro il limite d'uso.
+  const place_name = await reverseGeocodeBestName(latitude, longitude).catch(() => null);
 
   const { error } = await supabase.from("location_checkins").insert({
     user_id: user.id,
