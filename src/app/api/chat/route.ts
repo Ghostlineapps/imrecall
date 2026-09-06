@@ -5,6 +5,43 @@ import { generateEmbedding } from "@/lib/openai/embeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const ITALIAN_MONTHS: Record<string, number> = {
+  gennaio: 0, febbraio: 1, marzo: 2, aprile: 3, maggio: 4, giugno: 5,
+  luglio: 6, agosto: 7, settembre: 8, ottobre: 9, novembre: 10, dicembre: 11,
+};
+
+// Bug reale trovato il 2026-09-06: una domanda come "dove ho cenato il 5
+// settembre" passava SOLO per match_memories, cioè similarità semantica tra
+// l'embedding della domanda e quello delle memorie — nessun filtro per
+// data. Se la memoria di quel giorno ha solo una descrizione generica
+// (vedi il caso "Foto di una pizza" segnalato dall'utente), la similarità
+// con "dove ho cenato" può restare sotto soglia e la domanda con una data
+// esplicita fallisce anche quando la memoria giusta esiste. Qui, se la
+// domanda contiene una data italiana riconoscibile, la affianchiamo con
+// una ricerca diretta per memory_date — indipendente dall'embedding — più
+// il percorso GPS grezzo di quel giorno (location_checkins), utile anche
+// quando non esiste nessuna memoria salvata ma l'utente ha comunque
+// attraversato quel posto.
+function parseItalianDateMention(text: string): { start: Date; end: Date } | null {
+  const match = text
+    .toLowerCase()
+    .match(
+      /\b(\d{1,2})\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+(\d{4}))?\b/
+    );
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = ITALIAN_MONTHS[match[2]];
+  if (day < 1 || day > 31) return null;
+
+  const now = new Date();
+  const year = match[3] ? parseInt(match[3], 10) : now.getUTCFullYear();
+
+  const start = new Date(Date.UTC(year, month, day, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
+  return { start, end };
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -61,13 +98,49 @@ export async function POST(req: NextRequest) {
   // agosto 2026") non superava 0.65 pur essendo chiaramente la memoria
   // giusta — 0.65 era troppo severo per query formulate diversamente dal
   // contenuto originale.
-  const queryEmbedding = await generateEmbedding(query);
-  const { data: matches } = await supabase.rpc("match_memories", {
-    query_embedding: queryEmbedding,
-    match_threshold: 0.5,
-    match_count: 5,
-    p_user_id: user.id,
-  });
+  const dateRange = parseItalianDateMention(query);
+
+  const [{ data: semanticMatches }, dateMatches, dateCheckins] = await Promise.all([
+    (async () => {
+      const queryEmbedding = await generateEmbedding(query);
+      return supabase.rpc("match_memories", {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.5,
+        match_count: 5,
+        p_user_id: user.id,
+      });
+    })(),
+    dateRange
+      ? supabase
+          .from("memories")
+          .select("id, content, title, type, categories, tags, memory_date")
+          .eq("user_id", user.id)
+          .gte("memory_date", dateRange.start.toISOString())
+          .lt("memory_date", dateRange.end.toISOString())
+          .order("memory_date", { ascending: true })
+          .then(({ data }: { data: any[] | null }) => data ?? [])
+      : Promise.resolve([]),
+    dateRange
+      ? supabase
+          .from("location_checkins")
+          .select("place_name, created_at")
+          .eq("user_id", user.id)
+          .gte("created_at", dateRange.start.toISOString())
+          .lt("created_at", dateRange.end.toISOString())
+          .not("place_name", "is", null)
+          .order("created_at", { ascending: true })
+          .then(({ data }: { data: any[] | null }) => data ?? [])
+      : Promise.resolve([]),
+  ]);
+
+  // Le memorie trovate per data esplicita vengono prima (più affidabili di
+  // una similarità semantica su una data), poi quelle semantiche non già
+  // incluse.
+  const seenIds = new Set(dateMatches.map((m: any) => m.id));
+  const matches = [
+    ...dateMatches,
+    ...(semanticMatches ?? []).filter((m: any) => !seenIds.has(m.id)),
+  ];
 
   // Ultimi 6 messaggi per il contesto di follow-up
   const { data: history } = await supabase
@@ -81,14 +154,27 @@ export async function POST(req: NextRequest) {
     .map((m: any, i: number) => `[${i + 1}] (${m.memory_date}) ${m.title ?? ""} — ${m.content}`)
     .join("\n\n");
 
-  const systemPrompt = matches?.length
+  // Percorso GPS grezzo del giorno menzionato (location_checkins): utile
+  // come contesto "dove sei stato" anche quando quel giorno non è stata
+  // salvata nessuna memoria vera e propria — es. una domanda su uno
+  // spostamento senza foto/note collegate.
+  const checkinsBlock = dateCheckins
+    .map((c: any) => `- ${new Date(c.created_at).toLocaleTimeString("it-IT")}: ${c.place_name}`)
+    .join("\n");
+
+  const hasContext = matches.length > 0 || dateCheckins.length > 0;
+
+  const systemPrompt = hasContext
     ? `Sei l'assistente di memoria personale di IMRECALL. Rispondi alla domanda dell'utente
-usando SOLO le memorie fornite come contesto qui sotto. Cita le memorie rilevanti
-usando il loro numero tra parentesi quadre, es. [1]. Rispondi in italiano, in modo
-diretto e naturale.
+usando SOLO le informazioni fornite come contesto qui sotto. Cita le memorie rilevanti
+usando il loro numero tra parentesi quadre, es. [1]. Se la risposta viene solo dal
+percorso GPS (nessuna memoria salvata quel giorno), dillo esplicitamente — è una
+posizione registrata automaticamente, non un ricordo scritto dall'utente. Rispondi in
+italiano, in modo diretto e naturale.
 
 MEMORIE RILEVANTI:
-${contextBlock}`
+${contextBlock || "(nessuna)"}
+${checkinsBlock ? `\nPOSIZIONI REGISTRATE QUEL GIORNO:\n${checkinsBlock}` : ""}`
     : `Sei l'assistente di memoria personale di IMRECALL. Non è stata trovata nessuna
 memoria rilevante per questa domanda. Dillo onestamente all'utente, senza inventare
 nulla, in italiano.`;
