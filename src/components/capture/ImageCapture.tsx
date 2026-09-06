@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus, CheckCircle2 } from "lucide-react";
 import { mutate } from "swr";
+import { ensureNativeLocationPermission } from "@/lib/utils/nativeGeolocation";
 
 // Prova prima l'EXIF della foto (funziona anche per scatti vecchi importati
 // dalla galleria); se manca (screenshot, immagini scaricate da chat...),
@@ -22,6 +23,15 @@ async function extractPhotoCoords(file: File): Promise<{ latitude: number; longi
   }
 
   if (!("geolocation" in navigator)) return null;
+
+  // Dentro l'app nativa Android il vero permesso di sistema va chiesto
+  // esplicitamente tramite il plugin Capacitor prima di usare
+  // navigator.geolocation, altrimenti la webview rifiuta sempre in
+  // silenzio — vedi nativeGeolocation.ts, useLocationCheckin.ts e
+  // NearbyForYou.tsx. Mancava qui: era il motivo per cui il caricamento
+  // foto non collegava quasi mai un luogo (fix 2026-09-06). Su web/PWA
+  // questa chiamata non fa nulla.
+  await ensureNativeLocationPermission();
 
   try {
     const position = await new Promise<GeolocationPosition>((resolve, reject) =>
