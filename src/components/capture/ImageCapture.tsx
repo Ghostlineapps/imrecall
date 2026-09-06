@@ -43,6 +43,35 @@ async function extractPhotoCoords(file: File): Promise<{ latitude: number; longi
   }
 }
 
+// La memoria va datata al momento dello SCATTO, non a quando viene caricata
+// — altrimenti importare una foto vecchia (o anche solo di ieri) la
+// registra come "oggi", e tutto il resurfacing "un anno fa eri qui" non può
+// mai funzionare per nulla che non sia caricato nell'istante esatto in cui
+// è stato scattato. Bug reale trovato il 2026-09-06: /api/upload/image
+// impostava sempre memory_date a new Date() lato server, ignorando del
+// tutto quando la foto era stata scattata davvero.
+// DateTimeOriginal (EXIF) è la fonte più affidabile; se manca (screenshot,
+// immagini senza EXIF) ripieghiamo su file.lastModified — non perfetto per
+// una foto ricevuta via chat/scaricata, ma sempre meglio della data di
+// caricamento per foto vecchie importate dalla galleria.
+async function extractPhotoDate(file: File): Promise<Date | null> {
+  try {
+    const mod: any = await import("exifr");
+    const exifr = mod?.default ?? mod;
+    const tags = await exifr?.parse?.(file, { pick: ["DateTimeOriginal", "CreateDate"] });
+    const raw = tags?.DateTimeOriginal ?? tags?.CreateDate;
+    if (raw instanceof Date && !isNaN(raw.getTime())) return raw;
+  } catch {
+    // formato non supportato o nessun EXIF: proviamo il fallback sotto
+  }
+
+  if (typeof file.lastModified === "number" && file.lastModified > 0) {
+    return new Date(file.lastModified);
+  }
+
+  return null;
+}
+
 export function ImageCapture({
   onSaved,
   isHealth = false,
@@ -83,6 +112,9 @@ export function ImageCapture({
       // "ti ricordi quando eri qui?" quando torni nello stesso posto — vedi
       // /api/upload/image e nearby_memories().
       const coords = await extractPhotoCoords(file);
+      // Stessa cosa per la data reale dello scatto (vedi extractPhotoDate):
+      // va letta anche questa dal file originale, prima della compressione.
+      const capturedAt = await extractPhotoDate(file);
 
       // Compressione client-side prima dell'upload (max 1024px, ~0.85 quality)
       const imageCompression = (await import("browser-image-compression")).default;
@@ -97,6 +129,9 @@ export function ImageCapture({
       if (coords) {
         formData.append("latitude", String(coords.latitude));
         formData.append("longitude", String(coords.longitude));
+      }
+      if (capturedAt) {
+        formData.append("captured_at", capturedAt.toISOString());
       }
       if (isHealth) formData.append("is_health", "true");
       if (isExpense) formData.append("is_expense", "true");
