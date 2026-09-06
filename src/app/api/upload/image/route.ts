@@ -132,6 +132,18 @@ export async function POST(req: NextRequest) {
   const latitude = typeof rawLat === "string" ? parseFloat(rawLat) : NaN;
   const longitude = typeof rawLon === "string" ? parseFloat(rawLon) : NaN;
   const hasCoords = Number.isFinite(latitude) && Number.isFinite(longitude);
+  // Data reale dello scatto (EXIF DateTimeOriginal o, in mancanza,
+  // file.lastModified — vedi extractPhotoDate in ImageCapture.tsx), non
+  // quando la foto viene caricata: senza questo, importare una foto vecchia
+  // la registrava sempre come "oggi" e il resurfacing "un anno fa eri qui"
+  // non poteva mai funzionare per nulla che non fosse caricato nell'istante
+  // esatto dello scatto (bug reale, trovato 2026-09-06). Ignoriamo un
+  // valore assurdo (nel futuro, es. orologio del telefono sballato) invece
+  // di fidarci ciecamente del client.
+  const rawCapturedAt = formData.get("captured_at");
+  const capturedAtDate = typeof rawCapturedAt === "string" ? new Date(rawCapturedAt) : null;
+  const capturedAtValid =
+    capturedAtDate && !isNaN(capturedAtDate.getTime()) && capturedAtDate.getTime() <= Date.now() + 60 * 60 * 1000;
   // Vedi migrazione 020 / CaptureSheet healthMode: la sezione Salute manda
   // esplicitamente "true" quando l'utente carica un referto da lì.
   const isHealth = formData.get("is_health") === "true";
@@ -199,7 +211,7 @@ export async function POST(req: NextRequest) {
       media_path: path,
       media_url: signedUrl?.signedUrl,
       media_size: buffer.length,
-      memory_date: new Date().toISOString(),
+      memory_date: capturedAtValid ? capturedAtDate!.toISOString() : new Date().toISOString(),
       is_health: isHealth,
       is_expense: isExpense,
       is_pregnancy: isPregnancy,
