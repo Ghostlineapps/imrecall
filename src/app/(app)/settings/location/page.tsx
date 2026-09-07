@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import {
@@ -12,9 +12,9 @@ import {
   stopNativeTracking,
 } from "@/lib/utils/nativeGeolocation";
 import { extractPointsFromPhotos, parseTakeoutFile, sendPointsInChunks } from "@/lib/import/locationImport";
+import { TRACKING_TOGGLE_EVENT } from "@/hooks/useLocationFallbackTracking";
 
 const TRACKING_STORAGE_KEY = "imrecall_location_tracking_enabled";
-const TRACKING_INTERVAL_MS = 10 * 60 * 1000; // ogni 10 minuti
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -35,13 +35,17 @@ export default function LocationSettingsPage() {
   const [tracking, setTracking] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [lastPing, setLastPing] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastPingAtRef = useRef<number>(0);
 
   // Dentro l'app nativa Android il tracciamento gira in un Foreground
   // Service con geofencing + campionamento adattivo (vedi
-  // nativeGeolocation.ts), non più nel setInterval qui sotto — quello resta
-  // solo come fallback per chi usa il sito da un browser desktop/mobile.
+  // nativeGeolocation.ts). Su web/iOS il fallback (intervallo +
+  // re-ping su visibilitychange) NON vive più qui: da qui in poi vive
+  // nell'hook app-wide useLocationFallbackTracking.ts (montato nel layout),
+  // perché tenerlo scoped a questa pagina significava che non partiva mai
+  // nell'uso reale (nessuno tiene aperta Impostazioni → Spostamenti mentre
+  // guida) — bug reale trovato il 2026-09-07. Questa pagina resta
+  // responsabile solo del pulsante (preferenza in localStorage + un ping
+  // immediato per il feedback "Ultima posizione salvata alle...").
   const [nativeAvailable, setNativeAvailable] = useState(false);
 
   useEffect(() => {
@@ -118,55 +122,6 @@ export default function LocationSettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeAvailable]);
 
-  useEffect(() => {
-    // Su nativo il tracciamento è gestito dal Foreground Service Android
-    // (avviato/fermato da toggleTracking), non da questo intervallo nel tab.
-    if (nativeAvailable) return;
-
-    if (!tracking) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-
-    lastPingAtRef.current = Date.now();
-    sendCurrentPosition();
-    intervalRef.current = setInterval(() => {
-      lastPingAtRef.current = Date.now();
-      sendCurrentPosition();
-    }, TRACKING_INTERVAL_MS);
-
-    // Bug reale trovato il 2026-09-06 (segnalato dall'utente, verificato sui
-    // dati): questo ramo è l'UNICO usato su iOS — non esiste una cartella
-    // ios/ in questo repo, solo android/, quindi su iPhone il Foreground
-    // Service nativo non esiste affatto, sempre e comunque, a prescindere
-    // da qualunque riavvio lato Android. Su iOS Safari/PWA, questo
-    // setInterval viene sospeso dal sistema appena la pagina non è in primo
-    // piano — stesso comportamento già documentato in useLocationCheckin.ts.
-    // Prova sui dati reali: uscita del 5 settembre (iPhone), punti ogni
-    // 60-100 minuti invece che ogni 10. Qui replichiamo la stessa
-    // mitigazione già in uso in useLocationCheckin.ts: un ping immediato al
-    // ritorno in primo piano, invece di aspettare il prossimo tick che su
-    // iOS potrebbe non arrivare mai. Non è tracciamento realtime in
-    // background — su iOS senza un'app nativa vera e propria (con
-    // CLLocationManager e background modes) non è ottenibile in nessun
-    // modo — ma riduce lo scarto tra dove sei davvero e l'ultimo punto
-    // salvato ogni volta che riapri l'app, invece di scoprirlo solo al
-    // prossimo tick programmato.
-    function pingIfStale() {
-      if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastPingAtRef.current < 2 * 60 * 1000) return;
-      lastPingAtRef.current = Date.now();
-      sendCurrentPosition();
-    }
-    document.addEventListener("visibilitychange", pingIfStale);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      document.removeEventListener("visibilitychange", pingIfStale);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking, nativeAvailable]);
-
   function sendCurrentPosition() {
     if (!navigator.geolocation) {
       setTrackingError("Il browser non supporta la geolocalizzazione.");
@@ -237,6 +192,22 @@ export default function LocationSettingsPage() {
     setTracking(next);
     setTrackingError(null);
     window.localStorage.setItem(TRACKING_STORAGE_KEY, String(next));
+
+    // Avvisa subito l'hook app-wide (useLocationFallbackTracking.ts, montato
+    // nel layout) del cambio di preferenza: un semplice write in
+    // localStorage non basta, perché l'evento "storage" nativo del browser
+    // non scatta mai nella stessa scheda che ha scritto la chiave — solo
+    // nelle altre. Senza questo evento il fallback web/iOS partirebbe solo
+    // al prossimo remount della pagina invece che all'istante.
+    window.dispatchEvent(new Event(TRACKING_TOGGLE_EVENT));
+
+    // Feedback immediato solo per questa pagina (non nativo: su nativo la
+    // notifica del Foreground Service basta): un ping subito, così
+    // "Ultima posizione salvata alle..." si aggiorna senza aspettare il
+    // primo tick dell'hook app-wide.
+    if (!nativeAvailable && next) {
+      sendCurrentPosition();
+    }
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -453,7 +424,7 @@ export default function LocationSettingsPage() {
           <p className="text-sm text-celeste-muted mt-1">
             Scegli una data (l&apos;ora è facoltativa): IMRECALL cerca lo spostamento registrato
             più vicino a quel momento.
-          </p>
+        </p>
         </div>
 
         <div className="flex gap-2">
@@ -488,7 +459,7 @@ export default function LocationSettingsPage() {
               {searchResult.diff_minutes > 15 &&
                 ` (~${searchResult.diff_minutes} minuti dall'orario cercato)`}
             </p>
-          </div>
+            </div>
         )}
       </div>
 
