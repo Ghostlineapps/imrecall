@@ -106,7 +106,13 @@ export function useLocationFallbackTracking() {
       if (document.visibilityState !== "visible") return;
       if (nativeAvailableRef.current) return;
       if (window.localStorage.getItem(TRACKING_STORAGE_KEY) !== "true") return;
-      if (Date.now() - lastPingAtRef.current < 2 * 60 * 1000) return;
+      // Era 2 minuti: abbassata a 1 dopo il bug del 2026-09-07 (Mariotto →
+      // Terlizzi → Giovinazzo) per recuperare più in fretta il ritardo
+      // quando si riapre l'app dopo che lo schermo è rimasto spento a
+      // lungo — resta comunque un debounce vero, non un ping ad ogni
+      // sblocco: un rapido cambio di tab/app entro il minuto non fa
+      // scattare una nuova richiesta GPS.
+      if (Date.now() - lastPingAtRef.current < 60 * 1000) return;
       lastPingAtRef.current = Date.now();
       sendCurrentPosition();
     }
