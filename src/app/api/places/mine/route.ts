@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
 const { data: places, error } = await supabase
   .from("places")
-  .select("id, name, latitude, longitude, granularity")
+  .select("id, name, latitude, longitude, granularity, excluded_from_resurfacing")
   .eq("user_id", user.id)
   .not("latitude", "is", null)
   .not("longitude", "is", null)
