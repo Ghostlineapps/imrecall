@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
+import { resolvePlaceName } from "@/lib/utils/resolvePlaceName";
+import { findNearestPlace } from "@/lib/utils/nearestPlace";
+import { sendPushToUser } from "@/lib/push/server";
+
+// Soglia per i promemoria di arrivo: molto più stretta dei 15 km di
+// nearby_memories/nearby_intentions qui sotto — lì basta "essere in zona"
+// per far riemergere un ricordo, qui invece conta solo "sono davvero
+// arrivato", altrimenti "quando arrivo a casa ricordami di innaffiare le
+// piante" scatterebbe già dall'altra parte della città.
+const ARRIVAL_REMINDER_RADIUS_METERS = 200;
 
 /**
  * Chiamato all'apertura dell'app (non background tracking — vedi nota nel
@@ -30,11 +39,62 @@ export async function POST(req: NextRequest) {
 
   // Anche qui traduciamo subito in un nome di luogo leggibile (vedi
   // /api/locations/track): questo endpoint scatta solo all'apertura
-  // dell'app, quindi il volume di richieste resta basso. reverseGeocodeBestName
-  // preferisce il nome del locale/monumento quando riconoscibile (fix
-  // 2026-09-06: vedi geocoding.ts), invece del solo indirizzo generico.
-  const place_name = await reverseGeocodeBestName(latitude, longitude).catch(() => null);
+  // dell'app, quindi il volume di richieste resta basso.
+  // resolvePlaceName preferisce un luogo salvato dall'utente ("Casa",
+  // "Lavoro"...) quando la posizione cade abbastanza vicino, altrimenti
+  // ricade sul nome del locale/monumento riconoscibile o sull'indirizzo
+  // generico da reverse geocoding (fix 2026-09-06: vedi geocoding.ts).
+  const place_name = await resolvePlaceName(supabase, user.id, latitude, longitude);
   await supabase.from("location_checkins").insert({ user_id: user.id, latitude, longitude, place_name });
+
+  // Promemoria di arrivo "usa e getta" (vedi migrazione 032 e
+  // /api/arrival-reminders/route.ts): a differenza del resurfacing sotto,
+  // non compete per lo slot di TodayCard e non serve riaprire l'app — arriva
+  // anche come notifica push. Controllato ad ogni check-in, indipendentemente
+  // da eventuali ricordi/intenzioni nei paraggi.
+  const { data: pendingReminders } = await supabase
+    .from("arrival_reminders")
+    .select("id, message, places(name, latitude, longitude)")
+    .eq("user_id", user.id)
+    .eq("triggered", false);
+
+  const arrivedReminder = findNearestPlace(
+    (pendingReminders ?? [])
+      .map((r: any) => ({ ...r, latitude: r.places?.latitude ?? null, longitude: r.places?.longitude ?? null }))
+      .filter((r: any) => r.latitude != null && r.longitude != null),
+    latitude,
+    longitude,
+    ARRIVAL_REMINDER_RADIUS_METERS
+  );
+
+  if (arrivedReminder) {
+    await supabase
+      .from("arrival_reminders")
+      .update({ triggered: true, triggered_at: new Date().toISOString() })
+      .eq("id", (arrivedReminder as any).id);
+
+    // La notifica push è solo un extra rispetto al promemoria stesso: se
+    // l'invio fallisce (es. utente senza sottoscrizione push attiva), il
+    // promemoria resta comunque segnato come consegnato — non deve
+    // ripresentarsi ad ogni check-in successivo.
+    sendPushToUser(user.id, {
+      title: `Sei arrivato: ${(arrivedReminder as any).places?.name ?? "un luogo salvato"}`,
+      body: (arrivedReminder as any).message,
+      url: "/home",
+    }).catch(() => {});
+  }
+
+  // I luoghi esclusi dal resurfacing di prossimità (es. "Casa") non devono
+  // far ricomparire nessun ricordo/intenzione collegato, anche se entro i
+  // 15 km di nearby_memories/nearby_intentions — vedi migrazione 032. Filtro
+  // lato applicazione invece di toccare di nuovo quelle funzioni SQL, già
+  // passate per tre round di bug (030_fix_nearby_functions.sql).
+  const { data: excludedPlacesRaw } = await supabase
+    .from("places")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("excluded_from_resurfacing", true);
+  const excludedPlaceIds = new Set((excludedPlacesRaw ?? []).map((p: any) => p.id));
 
   const [{ data: intentions }, { data: memories }] = await Promise.all([
     supabase.rpc("nearby_intentions", {
@@ -51,9 +111,11 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  const nearby = [...(intentions ?? []), ...(memories ?? [])];
+  const nearby = [...(intentions ?? []), ...(memories ?? [])].filter(
+    (n: any) => !excludedPlaceIds.has(n.place_id)
+  );
   if (nearby.length === 0) {
-    return NextResponse.json({ candidates_created: 0 });
+    return NextResponse.json({ candidates_created: 0, arrival_reminder_triggered: !!arrivedReminder });
   }
 
   // Evita duplicati: non ricreare un candidato per la stessa memoria se già
@@ -72,6 +134,7 @@ export async function POST(req: NextRequest) {
   const alreadyQueued = new Set((existing ?? []).map((e: any) => e.memory_id));
 
   const fromIntentions = (intentions ?? [])
+    .filter((n: any) => !excludedPlaceIds.has(n.place_id))
     .filter((n: any) => !alreadyQueued.has(n.memory_id))
     .map((n: any) => ({
       user_id: user.id,
@@ -85,6 +148,7 @@ export async function POST(req: NextRequest) {
     }));
 
   const fromMemories = (memories ?? [])
+    .filter((n: any) => !excludedPlaceIds.has(n.place_id))
     .filter((n: any) => !alreadyQueued.has(n.memory_id))
     .map((n: any) => {
       const when = n.memory_date ? format(new Date(n.memory_date), "d MMMM yyyy", { locale: it }) : null;
@@ -116,5 +180,9 @@ export async function POST(req: NextRequest) {
   .slice(0, 3)
   .map(({ title, body }) => ({ title, body }));
 
-  return NextResponse.json({ candidates_created: toInsert.length, candidates });
+  return NextResponse.json({
+    candidates_created: toInsert.length,
+    candidates,
+    arrival_reminder_triggered: !!arrivedReminder,
+  });
 }
