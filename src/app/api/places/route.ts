@@ -63,6 +63,38 @@ if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 return NextResponse.json({ place });
 }
 
+/**
+* Attiva/disattiva l'esclusione di un luogo dai promemoria di prossimità
+* ("Sei di nuovo a..."). Utile per "Casa" o "Lavoro": senza questo, ogni
+* ricordo/intenzione collegata a quel luogo (via memory_places, entro i 15
+* km di raggio di nearby_memories/nearby_intentions) ricompariva ad ogni
+* check-in — vedi migrazione 032 e la spiegazione in /api/checkin/route.ts.
+*/
+export async function PATCH(req: NextRequest) {
+const { supabase, user } = await getAuthenticatedUser(req);
+if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+const body = await req.json().catch(() => null);
+const id = typeof body?.id === "string" ? body.id : "";
+const excluded = typeof body?.excluded_from_resurfacing === "boolean" ? body.excluded_from_resurfacing : null;
+
+if (!id || excluded === null) {
+return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+}
+
+const { data: place, error } = await supabase
+.from("places")
+.update({ excluded_from_resurfacing: excluded })
+.eq("id", id)
+.eq("user_id", user.id)
+.select("id, name, latitude, longitude, granularity, excluded_from_resurfacing")
+.single();
+
+if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+return NextResponse.json({ place });
+}
+
 /** Rimuove un luogo salvato manualmente (o comunque uno qualsiasi dei
 * propri luoghi) dalla pagina "Luoghi". */
 export async function DELETE(req: NextRequest) {
