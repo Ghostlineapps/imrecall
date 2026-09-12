@@ -15,14 +15,17 @@
 // profiles.onboarding_completed, migration 029 per il backfill di chi era
 // già utente prima di questa modifica).
 //
-// Ultimo passaggio, "cycle" (migration 033): chiediamo se attivare il
-// tracciamento del ciclo mestruale invece di dedurlo dal sesso in fase di
-// registrazione — una domanda diretta, non obbligatoria (chi non spunta
-// nulla e continua ottiene semplicemente tracks_cycle=false, cambiabile
-// in qualsiasi momento da Impostazioni → Il tuo profilo) e indipendente
-// da chi risponde: non presuppone che debba farlo la persona che si
-// registra in prima persona, così funziona anche per chi vuole tracciare
-// il ciclo di qualcun altro (es. un partner) inserendo lui i dati.
+// Ultimo passaggio, "health" (migration 033 + 034): due domande dirette,
+// indipendenti tra loro e non obbligatorie, invece di dedurre nulla dal
+// sesso in fase di registrazione — chi non spunta nulla e continua ottiene
+// semplicemente tracks_cycle=false e tracks_pregnancy=false, cambiabile in
+// qualsiasi momento da Impostazioni → Il tuo profilo. Entrambe indipendenti
+// da chi risponde: non presuppongono che debba farlo la persona che si
+// registra in prima persona, così funzionano anche per chi vuole tracciare
+// il ciclo o la gravidanza di qualcun altro (es. un partner) inserendo lui
+// i dati. Niente cartelle "Salute uomo/donna" per differenziarle: l'intento
+// diretto copre lo stesso bisogno (non mostrare a chi non serve) senza
+// introdurre una categorizzazione per identità.
 // Mostrata sempre come ultimo step, sia per chi importa ricordi sia per
 // chi salta subito dall'intro, così copre anche chi si registra con
 // Google (nessun campo aggiuntivo nel form di signup).
@@ -31,7 +34,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { extractPointsFromPhotos, parseTakeoutFile, sendPointsInChunks } from "@/lib/import/locationImport";
 
-type Step = "intro" | "importing" | "reveal" | "no-highlights" | "cycle";
+type Step = "intro" | "importing" | "reveal" | "no-highlights" | "health";
 
 type Highlight = {
   recorded_at: string;
@@ -55,11 +58,15 @@ function yearsAgo(iso: string): string {
   return rounded === 1 ? "un anno fa" : `${rounded} anni fa`;
 }
 
-async function completeOnboarding(tracksCycle: boolean) {
+async function completeOnboarding(tracksCycle: boolean, tracksPregnancy: boolean) {
   await fetch("/api/profile", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ onboarding_completed: true, tracks_cycle: tracksCycle }),
+    body: JSON.stringify({
+      onboarding_completed: true,
+      tracks_cycle: tracksCycle,
+      tracks_pregnancy: tracksPregnancy,
+    }),
   }).catch(() => {});
 }
 
@@ -72,6 +79,7 @@ export default function OnboardingPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [finishing, setFinishing] = useState(false);
   const [tracksCycle, setTracksCycle] = useState(false);
+  const [tracksPregnancy, setTracksPregnancy] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const takeoutInputRef = useRef<HTMLInputElement>(null);
@@ -173,21 +181,21 @@ export default function OnboardingPage() {
   }
 
   // "reveal" e "no-highlights" non finiscono più direttamente l'onboarding:
-  // passano dallo step "cycle" prima di tornare a /home, così la domanda
-  // sul ciclo arriva sempre come ultimo passaggio, qualunque strada abbia
-  // preso l'utente prima (import riuscito, nessun momento saliente
-  // trovato, o skip immediato dall'intro).
+  // passano dallo step "health" prima di tornare a /home, così le domande
+  // su ciclo e gravidanza arrivano sempre come ultimo passaggio, qualunque
+  // strada abbia preso l'utente prima (import riuscito, nessun momento
+  // saliente trovato, o skip immediato dall'intro).
   function handleFinish() {
-    setStep("cycle");
+    setStep("health");
   }
 
   function handleSkip() {
-    setStep("cycle");
+    setStep("health");
   }
 
-  async function handleCycleContinue() {
+  async function handleHealthContinue() {
     setFinishing(true);
-    await completeOnboarding(tracksCycle);
+    await completeOnboarding(tracksCycle, tracksPregnancy);
     router.replace("/home");
   }
 
@@ -313,28 +321,40 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {step === "cycle" && (
+      {step === "health" && (
         <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full space-y-6 text-center animate-fade-in">
           <div className="space-y-2">
             <h1 className="text-xl font-semibold">Un&apos;ultima cosa.</h1>
             <p className="text-celeste-muted text-sm">
-              IMRECALL può tenere traccia del ciclo mestruale — previsioni, sintomi e
-              correlazioni con i tuoi ricordi. Vuoi attivarlo? Puoi cambiare idea quando vuoi da
-              Impostazioni → Il tuo profilo.
+              IMRECALL può tenere traccia del ciclo mestruale o organizzare una gravidanza —
+              previsioni, sintomi, appuntamenti e correlazioni con i tuoi ricordi. Vuoi attivarli?
+              Puoi cambiare idea quando vuoi da Impostazioni → Il tuo profilo.
             </p>
           </div>
 
-          <label className="card-light flex items-center gap-3 text-left cursor-pointer">
-            <input
-              type="checkbox"
-              checked={tracksCycle}
-              onChange={(e) => setTracksCycle(e.target.checked)}
-              className="shrink-0"
-            />
-            <span className="text-sm font-medium">Voglio tracciare il ciclo mestruale</span>
-          </label>
+          <div className="space-y-3">
+            <label className="card-light flex items-center gap-3 text-left cursor-pointer">
+              <input
+                type="checkbox"
+                checked={tracksCycle}
+                onChange={(e) => setTracksCycle(e.target.checked)}
+                className="shrink-0"
+              />
+              <span className="text-sm font-medium">Voglio tracciare il ciclo mestruale</span>
+            </label>
 
-          <button onClick={handleCycleContinue} disabled={finishing} className="btn-primary-light w-full">
+            <label className="card-light flex items-center gap-3 text-left cursor-pointer">
+              <input
+                type="checkbox"
+                checked={tracksPregnancy}
+                onChange={(e) => setTracksPregnancy(e.target.checked)}
+                className="shrink-0"
+              />
+              <span className="text-sm font-medium">Voglio gestire una gravidanza</span>
+            </label>
+          </div>
+
+          <button onClick={handleHealthContinue} disabled={finishing} className="btn-primary-light w-full">
             {finishing ? "Un attimo…" : "Inizia a usare IMRECALL"}
           </button>
         </div>
