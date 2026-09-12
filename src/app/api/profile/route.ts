@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("dietary_preferences, interests, monthly_budget, onboarding_completed")
+    .select("dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle")
     .eq("id", user.id)
     .single();
 
@@ -28,6 +28,10 @@ export async function GET() {
     // nuovo (mai completato /onboarding) — vedi quel hook e la migration
     // 029 per il backfill degli utenti già esistenti.
     onboarding_completed: profile?.onboarding_completed ?? true,
+    // Chiesto una volta in /onboarding (migration 033): null finché non
+    // risponde, poi true/false. Determina se la card Ciclo in home e il
+    // punto d'ingresso in Salute vengono mostrati — vedi /api/cycle/status.
+    tracks_cycle: profile?.tracks_cycle ?? null,
   });
 }
 
@@ -57,6 +61,12 @@ export async function PATCH(req: NextRequest) {
   // una volta true resta true, il flusso di onboarding non va più mostrato.
   if (typeof body.onboarding_completed === "boolean") {
     update.onboarding_completed = body.onboarding_completed;
+  }
+  // Preferenza di visibilità per la card Ciclo (migration 033): impostata
+  // una prima volta in /onboarding, modificabile in qualsiasi momento da
+  // Impostazioni → Il tuo profilo.
+  if (typeof body.tracks_cycle === "boolean") {
+    update.tracks_cycle = body.tracks_cycle;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
