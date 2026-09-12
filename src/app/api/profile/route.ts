@@ -14,7 +14,9 @@ export async function GET() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy")
+    .select(
+      "dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy, weekly_reminders"
+    )
     .eq("id", user.id)
     .single();
 
@@ -37,6 +39,11 @@ export async function GET() {
     // se il pulsante Gravidanza nella ruota della Dashboard viene mostrato
     // — vedi DashboardHub.tsx.
     tracks_pregnancy: profile?.tracks_pregnancy ?? null,
+    // Promemoria ricorrenti per giorno della settimana (migration 035),
+    // impostati da /settings/profile e mostrati nel saluto in Home — vedi
+    // home/page.tsx. Chiavi: mon/tue/wed/thu/fri/sat/sun, valori: etichetta
+    // scelta dall'utente. Oggetto vuoto se non ne ha impostato nessuno.
+    weekly_reminders: profile?.weekly_reminders ?? {},
   });
 }
 
@@ -77,6 +84,22 @@ export async function PATCH(req: NextRequest) {
   // stesso principio di tracks_cycle sopra.
   if (typeof body.tracks_pregnancy === "boolean") {
     update.tracks_pregnancy = body.tracks_pregnancy;
+  }
+  // Promemoria ricorrenti per giorno (migration 035): il client rimanda
+  // sempre l'intero oggetto (stesso pattern degli array di preferenze
+  // sopra), qui lo si sanifica invece di fidarsi ciecamente — solo le 7
+  // chiavi valide, solo stringhe non vuote, troncate a 40 caratteri per
+  // non rompere il layout del saluto in Home.
+  if (body.weekly_reminders && typeof body.weekly_reminders === "object" && !Array.isArray(body.weekly_reminders)) {
+    const validDays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    const sanitized: Record<string, string> = {};
+    for (const day of validDays) {
+      const value = (body.weekly_reminders as Record<string, unknown>)[day];
+      if (typeof value === "string" && value.trim().length > 0) {
+        sanitized[day] = value.trim().slice(0, 40);
+      }
+    }
+    update.weekly_reminders = sanitized;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
