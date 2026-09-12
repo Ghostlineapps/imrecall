@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle")
+    .select("dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy")
     .eq("id", user.id)
     .single();
 
@@ -32,6 +32,11 @@ export async function GET() {
     // risponde, poi true/false. Determina se la card Ciclo in home e il
     // punto d'ingresso in Salute vengono mostrati — vedi /api/cycle/status.
     tracks_cycle: profile?.tracks_cycle ?? null,
+    // Chiesto una volta in /onboarding, seconda checkbox dello stesso step
+    // (migration 034): null finché non risponde, poi true/false. Determina
+    // se il pulsante Gravidanza nella ruota della Dashboard viene mostrato
+    // — vedi DashboardHub.tsx.
+    tracks_pregnancy: profile?.tracks_pregnancy ?? null,
   });
 }
 
@@ -67,6 +72,11 @@ export async function PATCH(req: NextRequest) {
   // Impostazioni → Il tuo profilo.
   if (typeof body.tracks_cycle === "boolean") {
     update.tracks_cycle = body.tracks_cycle;
+  }
+  // Preferenza di visibilità per il pulsante Gravidanza (migration 034),
+  // stesso principio di tracks_cycle sopra.
+  if (typeof body.tracks_pregnancy === "boolean") {
+    update.tracks_pregnancy = body.tracks_pregnancy;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
