@@ -14,12 +14,24 @@
 // finché non completano o saltano questo flusso una volta sola (vedi
 // profiles.onboarding_completed, migration 029 per il backfill di chi era
 // già utente prima di questa modifica).
+//
+// Ultimo passaggio, "cycle" (migration 033): chiediamo se attivare il
+// tracciamento del ciclo mestruale invece di dedurlo dal sesso in fase di
+// registrazione — una domanda diretta, non obbligatoria (chi non spunta
+// nulla e continua ottiene semplicemente tracks_cycle=false, cambiabile
+// in qualsiasi momento da Impostazioni → Il tuo profilo) e indipendente
+// da chi risponde: non presuppone che debba farlo la persona che si
+// registra in prima persona, così funziona anche per chi vuole tracciare
+// il ciclo di qualcun altro (es. un partner) inserendo lui i dati.
+// Mostrata sempre come ultimo step, sia per chi importa ricordi sia per
+// chi salta subito dall'intro, così copre anche chi si registra con
+// Google (nessun campo aggiuntivo nel form di signup).
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { extractPointsFromPhotos, parseTakeoutFile, sendPointsInChunks } from "@/lib/import/locationImport";
 
-type Step = "intro" | "importing" | "reveal" | "no-highlights";
+type Step = "intro" | "importing" | "reveal" | "no-highlights" | "cycle";
 
 type Highlight = {
   recorded_at: string;
@@ -43,11 +55,11 @@ function yearsAgo(iso: string): string {
   return rounded === 1 ? "un anno fa" : `${rounded} anni fa`;
 }
 
-async function finishOnboarding() {
+async function completeOnboarding(tracksCycle: boolean) {
   await fetch("/api/profile", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ onboarding_completed: true }),
+    body: JSON.stringify({ onboarding_completed: true, tracks_cycle: tracksCycle }),
   }).catch(() => {});
 }
 
@@ -59,6 +71,7 @@ export default function OnboardingPage() {
   const [importedCount, setImportedCount] = useState(0);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [finishing, setFinishing] = useState(false);
+  const [tracksCycle, setTracksCycle] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const takeoutInputRef = useRef<HTMLInputElement>(null);
@@ -159,15 +172,22 @@ export default function OnboardingPage() {
     }
   }
 
-  async function handleFinish() {
-    setFinishing(true);
-    await finishOnboarding();
-    router.replace("/home");
+  // "reveal" e "no-highlights" non finiscono più direttamente l'onboarding:
+  // passano dallo step "cycle" prima di tornare a /home, così la domanda
+  // sul ciclo arriva sempre come ultimo passaggio, qualunque strada abbia
+  // preso l'utente prima (import riuscito, nessun momento saliente
+  // trovato, o skip immediato dall'intro).
+  function handleFinish() {
+    setStep("cycle");
   }
 
-  async function handleSkip() {
+  function handleSkip() {
+    setStep("cycle");
+  }
+
+  async function handleCycleContinue() {
     setFinishing(true);
-    await finishOnboarding();
+    await completeOnboarding(tracksCycle);
     router.replace("/home");
   }
 
@@ -271,7 +291,7 @@ export default function OnboardingPage() {
           </p>
 
           <button onClick={handleFinish} disabled={finishing} className="btn-primary-light w-full">
-            {finishing ? "Un attimo…" : "Perfetto, andiamo"}
+            Continua
           </button>
         </div>
       )}
@@ -288,6 +308,33 @@ export default function OnboardingPage() {
             </p>
           </div>
           <button onClick={handleFinish} disabled={finishing} className="btn-primary-light w-full">
+            Continua
+          </button>
+        </div>
+      )}
+
+      {step === "cycle" && (
+        <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full space-y-6 text-center animate-fade-in">
+          <div className="space-y-2">
+            <h1 className="text-xl font-semibold">Un&apos;ultima cosa.</h1>
+            <p className="text-celeste-muted text-sm">
+              IMRECALL può tenere traccia del ciclo mestruale — previsioni, sintomi e
+              correlazioni con i tuoi ricordi. Vuoi attivarlo? Puoi cambiare idea quando vuoi da
+              Impostazioni → Il tuo profilo.
+            </p>
+          </div>
+
+          <label className="card-light flex items-center gap-3 text-left cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tracksCycle}
+              onChange={(e) => setTracksCycle(e.target.checked)}
+              className="shrink-0"
+            />
+            <span className="text-sm font-medium">Voglio tracciare il ciclo mestruale</span>
+          </label>
+
+          <button onClick={handleCycleContinue} disabled={finishing} className="btn-primary-light w-full">
             {finishing ? "Un attimo…" : "Inizia a usare IMRECALL"}
           </button>
         </div>
