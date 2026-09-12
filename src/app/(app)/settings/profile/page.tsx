@@ -18,6 +18,7 @@ export default function ProfilePreferencesPage() {
   const [diet, setDiet] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
   const [tracksCycle, setTracksCycle] = useState(false);
+  const [tracksPregnancy, setTracksPregnancy] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function ProfilePreferencesPage() {
       setDiet(data.dietary_preferences ?? []);
       setInterests(data.interests ?? []);
       setTracksCycle(!!data.tracks_cycle);
+      setTracksPregnancy(!!data.tracks_pregnancy);
     }
   }, [data]);
 
@@ -59,6 +61,23 @@ export default function ProfilePreferencesPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tracks_cycle: next }),
+      });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Stessa cosa per il pulsante Gravidanza nella Dashboard (migration 034),
+  // domanda gemella di tracks_cycle chiesta nello stesso step di onboarding.
+  async function togglePregnancy() {
+    const next = !tracksPregnancy;
+    setTracksPregnancy(next);
+    setSaving("tracks_pregnancy");
+    try {
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks_pregnancy: next }),
       });
     } finally {
       setSaving(null);
@@ -144,6 +163,24 @@ export default function ProfilePreferencesPage() {
         <p className="text-celeste-muted text-xs">
           Previsioni, sintomi e correlazioni con i tuoi ricordi. Puoi attivarla o disattivarla
           quando vuoi.
+        </p>
+      </div>
+
+      <div className="card-light space-y-3">
+        <p className="font-medium">Gravidanza</p>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={tracksPregnancy}
+            onChange={togglePregnancy}
+            disabled={saving === "tracks_pregnancy"}
+            className="shrink-0"
+          />
+          Mostra Gravidanza nella ruota della Dashboard
+        </label>
+        <p className="text-celeste-muted text-xs">
+          Appuntamenti, referti/esami e scadenze legati a una gravidanza. Puoi attivarla o
+          disattivarla quando vuoi.
         </p>
       </div>
 
