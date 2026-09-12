@@ -33,11 +33,19 @@ function formatDayIt(iso: string) {
  * questa funzione (vedi migrazione 031); nascondere la card finché
  * qualcuno non trova da solo /health/cycle vorrebbe dire non raggiungere
  * quell'obiettivo.
+ *
+ * L'invito però non va bene per chi ha già detto di no: /api/cycle/status
+ * restituisce visible=false quando profiles.tracks_cycle è stato
+ * impostato esplicitamente a false (domanda posta in /onboarding,
+ * migration 033) — in quel caso niente card, né come invito né a maggior
+ * ragione con lo stato.
  */
 export function CycleTodayCard() {
   const { data, isLoading } = useSWR("/api/cycle/status", fetcher);
 
   if (isLoading) return <div className="card-light h-16 animate-pulse bg-celeste-navy/5" />;
+
+  if (data?.visible === false) return null;
 
   const onboarded = !!data?.onboarded;
   const status = data?.status;
