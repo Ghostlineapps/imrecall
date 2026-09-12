@@ -20,91 +20,96 @@ import { createClient } from "@/lib/supabase/server";
 // calcolare — vedi discussione redesign 2026-08-21 ("pagina troppo piatta,
 // senza identità"). Pagina già dinamica (dipende dai cookie di sessione),
 // quindi calcolare l'ora lato server ad ogni richiesta è sicuro.
+//
+// 2026-09-12: la fascia 00:00-04:59 diceva "Ancora sveglio" — presume che
+// chi apre l'app a quell'ora sia rimasto alzato fino a tardi, ma potrebbe
+// essersi anche appena svegliato prima dell'alba. "Buio fuori" descrive il
+// momento senza presumere in che direzione, funziona per entrambi i casi.
 function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return "Ancora sveglio";
-  if (hour < 12) return "Buongiorno";
-  if (hour < 18) return "Buon pomeriggio";
-  return "Buonasera";
+const hour = new Date().getHours();
+if (hour < 5) return "Buio fuori";
+if (hour < 12) return "Buongiorno";
+if (hour < 18) return "Buon pomeriggio";
+return "Buonasera";
 }
 
 export default async function HomePage() {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+const supabase = createClient();
+const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, capture_streak_days")
-    .eq("id", user?.id)
-    .single();
+const { data: profile } = await supabase
+.from("profiles")
+.select("full_name, capture_streak_days")
+.eq("id", user?.id)
+.single();
 
-  const firstName = profile?.full_name?.split(" ")[0] || "";
+const firstName = profile?.full_name?.split(" ")[0] || "";
 
-  return (
-    <div className="bg-celeste-bg min-h-full pb-8 space-y-6">
-      {/* Hero: prima erano due righe di testo piatte su sfondo uniforme,
-          "Ciao / Dashboard" — un'etichetta, non un benvenuto. Ora un blocco
-          a piena larghezza con la palette del brand, il saluto vero e la
-          promessa del prodotto, più due bagliori sfocati per dare
-          profondità invece di un colore piatto. Il resto della pagina resta
-          sulla stessa palette, solo meno "urlata". */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-celeste-accent to-celeste-accentDark px-5 pt-8 pb-9 rounded-b-[32px] shadow-lg shadow-celeste-navy/15">
-        <div className="absolute -right-8 -top-16 w-44 h-44 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        <div className="absolute -left-10 -bottom-12 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+return (
+<div className="bg-celeste-bg min-h-full pb-8 space-y-6">
+{/* Hero: prima erano due righe di testo piatte su sfondo uniforme,
+"Ciao / Dashboard" — un'etichetta, non un benvenuto. Ora un blocco
+a piena larghezza con la palette del brand, il saluto vero e la
+promessa del prodotto, più due bagliori sfocati per dare
+profondità invece di un colore piatto. Il resto della pagina resta
+sulla stessa palette, solo meno "urlata". */}
+<div className="relative overflow-hidden bg-gradient-to-br from-celeste-accent to-celeste-accentDark px-5 pt-8 pb-9 rounded-b-[32px] shadow-lg shadow-celeste-navy/15">
+<div className="absolute -right-8 -top-16 w-44 h-44 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+<div className="absolute -left-10 -bottom-12 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
 
-        <div className="relative flex items-start justify-between gap-3">
-          <div>
-            {/* Prima era solo la scritta "IMRECALL": un'etichetta, non un
-                segno riconoscibile — lo stesso problema dell'icona sul
-                telefono prima del fix. Ora il logomark scelto affianca il
-                testo, la stessa forma già installata come icona app. */}
-            <div className="flex items-center gap-1.5">
-              <Logomark size={15} className="opacity-90" />
-              <p className="text-white/70 text-xs font-semibold tracking-wide uppercase">IMRECALL</p>
-            </div>
-            <h1 className="text-2xl font-extrabold text-white leading-tight mt-1">
-              {greeting()}
-              {firstName ? `, ${firstName}` : ""}
-            </h1>
-            <p className="text-white/75 text-sm mt-1.5">La tua memoria, in orbita.</p>
-          </div>
-          <StreakBadge days={profile?.capture_streak_days ?? 0} />
-        </div>
+<div className="relative flex items-start justify-between gap-3">
+<div>
+{/* Prima era solo la scritta "IMRECALL": un'etichetta, non un
+segno riconoscibile — lo stesso problema dell'icona sul
+telefono prima del fix. Ora il logomark scelto affianca il
+testo, la stessa forma già installata come icona app. */}
+<div className="flex items-center gap-1.5">
+<Logomark size={15} className="opacity-90" />
+<p className="text-white/70 text-xs font-semibold tracking-wide uppercase">IMRECALL</p>
+</div>
+<h1 className="text-2xl font-extrabold text-white leading-tight mt-1">
+{greeting()}
+{firstName ? `, ${firstName}` : ""}
+</h1>
+<p className="text-white/75 text-sm mt-1.5">La tua memoria, in orbita.</p>
+</div>
+<StreakBadge days={profile?.capture_streak_days ?? 0} />
+</div>
 
-        <div className="relative mt-6">
-          <DashboardSearchBar />
-        </div>
-      </div>
+<div className="relative mt-6">
+<DashboardSearchBar />
+</div>
+</div>
 
-      <div className="px-5 space-y-8">
-        <DashboardHub />
+<div className="px-5 space-y-8">
+<DashboardHub />
 
-        <div className="space-y-4 text-celeste-navy">
-          {/* Un'unica card per oggi, non una dashboard con 5 sezioni
-              scariche: meno scelta, più ritorno abituale. Il tipo di card
-              ruota tra on_this_day / proximity / deadline / pre_trip in
-              base a cosa ha priorità più alta oggi (vedi
-              /api/insights/today). */}
-          <TodayCard />
+<div className="space-y-4 text-celeste-navy">
+{/* Un'unica card per oggi, non una dashboard con 5 sezioni
+scariche: meno scelta, più ritorno abituale. Il tipo di card
+ruota tra on_this_day / proximity / deadline / pre_trip in
+base a cosa ha priorità più alta oggi (vedi
+/api/insights/today). */}
+<TodayCard />
 
-          {/* Dosi di oggi (se ci sono farmaci attivi) — non fa parte del
-              resurfacing giornaliero sopra: si aggiorna in tempo reale e
-              arriva anche via notifica push puntuale, vedi
-              /api/cron/medications e BACKLOG.md. */}
-          <MedicationsTodayCard />
+{/* Dosi di oggi (se ci sono farmaci attivi) — non fa parte del
+resurfacing giornaliero sopra: si aggiorna in tempo reale e
+arriva anche via notifica push puntuale, vedi
+/api/cron/medications e BACKLOG.md. */}
+<MedicationsTodayCard />
 
-          {/* Ciclo — vedi migrazione 031: card visibile anche prima
-              dell'onboarding (invito), non solo a chi già traccia, per lo
-              stesso motivo di visibilità spiegato in CycleTodayCard.tsx. */}
-          <CycleTodayCard />
+{/* Ciclo — vedi migrazione 031: card visibile anche prima
+dell'onboarding (invito), non solo a chi già traccia, per lo
+stesso motivo di visibilità spiegato in CycleTodayCard.tsx. */}
+<CycleTodayCard />
 
-          <NearbyForYou />
+<NearbyForYou />
 
-          {/* Punto d'ingresso per gli Spostamenti, non più dentro
-              Impostazioni: resta l'unico punto d'ingresso da qui. */}
-          <LocationStatusCard />
-        </div>
-      </div>
-    </div>
-  );
+{/* Punto d'ingresso per gli Spostamenti, non più dentro
+Impostazioni: resta l'unico punto d'ingresso da qui. */}
+<LocationStatusCard />
+</div>
+</div>
+</div>
+);
 }
