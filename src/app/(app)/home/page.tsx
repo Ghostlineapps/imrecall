@@ -33,17 +33,48 @@ if (hour < 18) return "Buon pomeriggio";
 return "Buonasera";
 }
 
+// Indice del giorno restituito da Date.getHours()/getDay(): 0 = domenica,
+// come da spec JS. Le chiavi sono sigle inglesi fisse (non "lun"/"mar"...)
+// così restano stabili indipendentemente dalla lingua dell'interfaccia —
+// vedi weekly_reminders in migration 035 e la UI in
+// settings/profile/page.tsx dove l'utente le imposta.
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// Tocco in più quando l'utente NON ha impostato un proprio promemoria per
+// oggi (vedi sotto): fasce orarie scelte apposta per essere universali —
+// tutti fanno colazione/pranzo/cena prima o poi, a differenza di "hai
+// fatto la skincare?" che presume chi legge. Se in futuro si aggiungono
+// altre fasce, stesso criterio: mai specifiche per un gruppo di persone.
+function timeBasedPrompt(): string | null {
+const hour = new Date().getHours();
+if (hour >= 5 && hour < 10) return "primo caffè?";
+if (hour >= 12 && hour < 15) return "hai già pensato a cosa pranzare?";
+if (hour >= 19 && hour < 22) return "cosa si cucina stasera?";
+return null;
+}
+
+function lowerFirst(s: string): string {
+return s.length > 0 ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
 export default async function HomePage() {
 const supabase = createClient();
 const { data: { user } } = await supabase.auth.getUser();
 
 const { data: profile } = await supabase
 .from("profiles")
-.select("full_name, capture_streak_days")
+.select("full_name, capture_streak_days, weekly_reminders")
 .eq("id", user?.id)
 .single();
 
 const firstName = profile?.full_name?.split(" ")[0] || "";
+
+// Promemoria personale di oggi (migration 035) se impostato, altrimenti
+// un tocco generico legato all'ora — mai entrambi insieme, la scelta
+// esplicita dell'utente vince sempre sul default.
+const todayKey = DAY_KEYS[new Date().getDay()];
+const personalReminder = (profile?.weekly_reminders as Record<string, string> | null)?.[todayKey];
+const extra = personalReminder ? `${lowerFirst(personalReminder)} oggi?` : timeBasedPrompt();
 
 return (
 <div className="bg-celeste-bg min-h-full pb-8 space-y-6">
@@ -70,6 +101,7 @@ testo, la stessa forma già installata come icona app. */}
 <h1 className="text-2xl font-extrabold text-white leading-tight mt-1">
 {greeting()}
 {firstName ? `, ${firstName}` : ""}
+{extra ? ` — ${extra}` : ""}
 </h1>
 <p className="text-white/75 text-sm mt-1.5">La tua memoria, in orbita.</p>
 </div>
