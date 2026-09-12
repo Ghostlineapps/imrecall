@@ -17,12 +17,14 @@ export default function ProfilePreferencesPage() {
 
   const [diet, setDiet] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
+  const [tracksCycle, setTracksCycle] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) {
       setDiet(data.dietary_preferences ?? []);
       setInterests(data.interests ?? []);
+      setTracksCycle(!!data.tracks_cycle);
     }
   }, [data]);
 
@@ -39,6 +41,24 @@ export default function ProfilePreferencesPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [kind]: next }),
+      });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Domanda posta la prima volta in /onboarding (migration 033): qui la si
+  // può cambiare in qualsiasi momento, sullo stesso principio di
+  // salvataggio immediato delle altre preferenze in questa pagina.
+  async function toggleCycle() {
+    const next = !tracksCycle;
+    setTracksCycle(next);
+    setSaving("tracks_cycle");
+    try {
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks_cycle: next }),
       });
     } finally {
       setSaving(null);
@@ -107,6 +127,24 @@ export default function ProfilePreferencesPage() {
             );
           })}
         </div>
+      </div>
+
+      <div className="card-light space-y-3">
+        <p className="font-medium">Ciclo mestruale</p>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={tracksCycle}
+            onChange={toggleCycle}
+            disabled={saving === "tracks_cycle"}
+            className="shrink-0"
+          />
+          Mostra la card del ciclo in Home e in Salute
+        </label>
+        <p className="text-celeste-muted text-xs">
+          Previsioni, sintomi e correlazioni con i tuoi ricordi. Puoi attivarla o disattivarla
+          quando vuoi.
+        </p>
       </div>
 
       {!isLoading && diet.length === 0 && interests.length === 0 && (
