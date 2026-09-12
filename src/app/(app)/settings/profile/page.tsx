@@ -8,6 +8,26 @@ import { DIETARY_OPTIONS, INTEREST_OPTIONS } from "@/lib/constants/preferences";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+// Ordine di visualizzazione dei giorni (Lun-Dom, come ci si aspetta in
+// Italia) — le chiavi restano sigle inglesi fisse per essere stabili
+// indipendentemente dalla lingua, vedi migration 035 e home/page.tsx dove
+// vengono lette.
+const DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LABELS: Record<string, string> = {
+  mon: "Lunedì",
+  tue: "Martedì",
+  wed: "Mercoledì",
+  thu: "Giovedì",
+  fri: "Venerdì",
+  sat: "Sabato",
+  sun: "Domenica",
+};
+
+// Chip pronte per il caso comune (zero digitazione), più un campo libero
+// per chi vuole scriverne uno suo — vedi discussione: niente di
+// preimpostato per genere, la scelta è sempre dell'utente.
+const REMINDER_PRESETS = ["Skincare", "Parrucchiere/Barbiere", "Bucato", "Palestra", "Spesa", "Spazzatura"];
+
 // Toggle a chip singolo con salvataggio immediato (niente form/tasto Salva):
 // scegliere "vegano" deve avere effetto subito sui consigli nei paraggi in
 // Home, senza un passaggio in più da ricordarsi di fare.
@@ -19,6 +39,9 @@ export default function ProfilePreferencesPage() {
   const [interests, setInterests] = useState<string[]>([]);
   const [tracksCycle, setTracksCycle] = useState(false);
   const [tracksPregnancy, setTracksPregnancy] = useState(false);
+  const [reminders, setReminders] = useState<Record<string, string>>({});
+  const [editingDay, setEditingDay] = useState<string | null>(null);
+  const [customInput, setCustomInput] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,6 +50,7 @@ export default function ProfilePreferencesPage() {
       setInterests(data.interests ?? []);
       setTracksCycle(!!data.tracks_cycle);
       setTracksPregnancy(!!data.tracks_pregnancy);
+      setReminders(data.weekly_reminders ?? {});
     }
   }, [data]);
 
@@ -82,6 +106,35 @@ export default function ProfilePreferencesPage() {
     } finally {
       setSaving(null);
     }
+  }
+
+  // Promemoria del giorno (migration 035): il client rimanda sempre
+  // l'intero oggetto, stesso pattern degli array di preferenze sopra — il
+  // server sanifica comunque lato suo, vedi /api/profile PATCH.
+  async function saveReminders(next: Record<string, string>) {
+    setReminders(next);
+    setSaving("weekly_reminders");
+    try {
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekly_reminders: next }),
+      });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  function setDayReminder(day: string, label: string) {
+    saveReminders({ ...reminders, [day]: label });
+    setEditingDay(null);
+    setCustomInput("");
+  }
+
+  function clearDayReminder(day: string) {
+    const next = { ...reminders };
+    delete next[day];
+    saveReminders(next);
   }
 
   return (
@@ -182,6 +235,87 @@ export default function ProfilePreferencesPage() {
           Appuntamenti, referti/esami e scadenze legati a una gravidanza. Puoi attivarla o
           disattivarla quando vuoi.
         </p>
+      </div>
+
+      <div className="card-light space-y-3">
+        <p className="font-medium">Promemoria del giorno</p>
+        <p className="text-celeste-muted text-xs">
+          Un piccolo promemoria ricorrente che compare nel saluto in Home, ad esempio
+          &ldquo;Buongiorno, {"{tu}"} — bucato oggi?&rdquo;. Scegli da una chip pronta o scrivine uno
+          tuo, giorno per giorno.
+        </p>
+        <div className="space-y-2">
+          {DAY_ORDER.map((day) => {
+            const label = reminders[day];
+            const isEditing = editingDay === day;
+            return (
+              <div key={day} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-celeste-navy/70 w-24 shrink-0">{DAY_LABELS[day]}</span>
+                  {label ? (
+                    <div className="flex-1 flex items-center justify-between gap-2 bg-celeste-navy/[0.03] rounded-lg px-3 py-1.5">
+                      <span className="text-sm font-medium truncate">{label}</span>
+                      <button
+                        onClick={() => clearDayReminder(day)}
+                        disabled={saving === "weekly_reminders"}
+                        className="text-celeste-muted text-xs shrink-0 hover:text-celeste-navy"
+                      >
+                        Rimuovi
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditingDay(isEditing ? null : day);
+                        setCustomInput("");
+                      }}
+                      className="flex-1 text-left text-sm text-celeste-muted border border-dashed border-celeste-navy/20 rounded-lg px-3 py-1.5 hover:border-celeste-navy/40"
+                    >
+                      + Aggiungi
+                    </button>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <div className="pl-[6.5rem] space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {REMINDER_PRESETS.map((preset) => (
+                        <button
+                          key={preset}
+                          onClick={() => setDayReminder(day, preset)}
+                          disabled={saving === "weekly_reminders"}
+                          className="px-3 py-1 rounded-full text-xs border border-celeste-navy/15 text-celeste-navy/70 hover:border-celeste-navy/30"
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customInput}
+                        onChange={(e) => setCustomInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && customInput.trim()) setDayReminder(day, customInput.trim());
+                        }}
+                        placeholder="Scrivine uno tu…"
+                        maxLength={40}
+                        className="flex-1 text-sm border border-celeste-navy/15 rounded-lg px-3 py-1.5 bg-white"
+                      />
+                      <button
+                        onClick={() => customInput.trim() && setDayReminder(day, customInput.trim())}
+                        disabled={!customInput.trim() || saving === "weekly_reminders"}
+                        className="text-sm text-celeste-accentDark font-medium disabled:opacity-40 shrink-0"
+                      >
+                        Aggiungi
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {!isLoading && diet.length === 0 && interests.length === 0 && (
