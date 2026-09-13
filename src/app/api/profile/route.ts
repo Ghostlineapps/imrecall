@@ -15,7 +15,7 @@ export async function GET() {
   const { data: profile, error } = await supabase
     .from("profiles")
     .select(
-      "dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy, weekly_reminders"
+      "dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy, weekly_reminders, daily_capture_reminder_enabled"
     )
     .eq("id", user.id)
     .single();
@@ -44,6 +44,11 @@ export async function GET() {
     // home/page.tsx. Chiavi: mon/tue/wed/thu/fri/sat/sun, valori: etichetta
     // scelta dall'utente. Oggetto vuoto se non ne ha impostato nessuno.
     weekly_reminders: profile?.weekly_reminders ?? {},
+    // Notifica push mattutina "hai catturato qualcosa oggi?" (migration
+    // 036) — sempre false finché l'utente non la accende esplicitamente da
+    // Impostazioni → Notifiche, stesso principio di tracks_cycle.
+    // tracks_pregnancy sopra. Vedi /api/cron/daily-capture-reminder.
+    daily_capture_reminder_enabled: profile?.daily_capture_reminder_enabled ?? false,
   });
 }
 
@@ -100,6 +105,12 @@ export async function PATCH(req: NextRequest) {
       }
     }
     update.weekly_reminders = sanitized;
+  }
+  // Notifica push mattutina (migration 036), attivata da Impostazioni →
+  // Notifiche — stesso principio di tracks_cycle/tracks_pregnancy sopra:
+  // mai automatico, sempre una scelta esplicita.
+  if (typeof body.daily_capture_reminder_enabled === "boolean") {
+    update.daily_capture_reminder_enabled = body.daily_capture_reminder_enabled;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
