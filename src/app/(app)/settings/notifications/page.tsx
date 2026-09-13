@@ -23,6 +23,13 @@ export default function NotificationsSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
+  // Promemoria mattutino "hai catturato qualcosa oggi?" (migration 036) —
+  // opt-in dedicato e separato dal push generico sopra, apposta: chi
+  // attiva le notifiche solo per farmaci/appuntamenti non deve ritrovarsi
+  // anche questo, vedi commento sul checkbox sotto.
+  const [dailyReminder, setDailyReminder] = useState(false);
+  const [dailyReminderSaving, setDailyReminderSaving] = useState(false);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setSupported(false);
@@ -36,6 +43,11 @@ export default function NotificationsSettingsPage() {
 
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+
+    fetch("/api/profile")
+      .then((r) => r.json())
+      .then((data) => setDailyReminder(!!data.daily_capture_reminder_enabled))
+      .catch(() => {});
   }, []);
 
   async function enablePush() {
@@ -95,6 +107,23 @@ export default function NotificationsSettingsPage() {
     }
   }
 
+  // Salvataggio immediato, stesso principio delle altre preferenze
+  // dell'app (vedi settings/profile/page.tsx) — nessun tasto Salva.
+  async function toggleDailyReminder() {
+    const next = !dailyReminder;
+    setDailyReminder(next);
+    setDailyReminderSaving(true);
+    try {
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ daily_capture_reminder_enabled: next }),
+      });
+    } finally {
+      setDailyReminderSaving(false);
+    }
+  }
+
   return (
     <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-6 text-celeste-navy">
       <div className="flex items-center gap-2">
@@ -141,6 +170,44 @@ export default function NotificationsSettingsPage() {
         )}
 
         {error && <p className="text-urgent text-sm">{error}</p>}
+      </div>
+
+      {/* Notifica separata dal toggle generico sopra, non una sua
+          conseguenza automatica: chi attiva il push solo per farmaci o
+          appuntamenti non deve ritrovarsi anche un promemoria quotidiano
+          che non ha chiesto — il rischio è che disattivi tutto il push pur
+          di non vederlo, perdendo anche gli avvisi che gli servono
+          davvero. Richiede comunque le notifiche push attive sopra: senza
+          una sottoscrizione non c'è nessun dispositivo a cui inviarla. */}
+      <div className="card-light space-y-3">
+        <div>
+          <p className="font-medium">Promemoria mattutino</p>
+          <p className="text-sm text-celeste-muted mt-1">
+            Un avviso alle 9 di mattina se non hai ancora catturato nulla quella giornata — niente
+            se hai già scritto o fotografato qualcosa.
+          </p>
+        </div>
+
+        <label
+          className={
+            "flex items-center gap-2 text-sm " + (supported && enabled ? "cursor-pointer" : "opacity-50")
+          }
+        >
+          <input
+            type="checkbox"
+            checked={dailyReminder}
+            onChange={toggleDailyReminder}
+            disabled={!supported || !enabled || dailyReminderSaving}
+            className="shrink-0"
+          />
+          Avvisami alle 9 se non ho ancora catturato nulla
+        </label>
+
+        {supported && !enabled && (
+          <p className="text-celeste-muted text-xs">
+            Attiva prima le notifiche push qui sopra.
+          </p>
+        )}
       </div>
     </div>
   );
