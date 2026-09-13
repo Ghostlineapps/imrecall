@@ -76,6 +76,16 @@ Collega Gmail per rilevare automaticamente appuntamenti dalle email
 <button onClick={handleLogout} className="btn-ghost-light text-sm">
 Esci
 </button>
+
+{/* Attribuzione societaria (richiesta esplicitamente dall'utente
+2026-09-13) + link alla privacy policy, obbligatoria per la
+pubblicazione su Google Play e per il GDPR — vedi src/app/privacy. */}
+<div className="text-center space-y-1 pt-2">
+<Link href="/privacy" className="text-xs text-celeste-muted underline">
+Informativa sulla Privacy
+</Link>
+<p className="text-xs text-celeste-muted/70">Powered by Axis Trade Partners Limited - Hong Kong</p>
+</div>
 </div>
 );
 }
