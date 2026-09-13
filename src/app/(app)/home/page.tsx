@@ -8,6 +8,7 @@ import { DashboardSearchBar } from "@/components/home/DashboardSearchBar";
 import { DashboardHub } from "@/components/home/DashboardHub";
 import { Logomark } from "@/components/brand/Logomark";
 import { createClient } from "@/lib/supabase/server";
+import { romeHourAndDayKey } from "@/lib/utils/romeTime";
 
 // Prima si chiamava "Home" e non era chiaro a cosa servisse: ora è la
 // Dashboard, il punto di partenza con accesso diretto (in cerchio) alle
@@ -19,34 +20,35 @@ import { createClient } from "@/lib/supabase/server";
 // Dashboard meno anonima, senza bisogno di contenuti dinamici pesanti da
 // calcolare — vedi discussione redesign 2026-08-21 ("pagina troppo piatta,
 // senza identità"). Pagina già dinamica (dipende dai cookie di sessione),
-// quindi calcolare l'ora lato server ad ogni richiesta è sicuro.
+// quindi calcolare l'ora lato server ad ogni richiesta è sicuro — ma va
+// calcolata nel fuso dell'utente, non in quello del server: vedi
+// romeHourAndDayKey() sotto.
 //
 // 2026-09-12: la fascia 00:00-04:59 diceva "Ancora sveglio" — presume che
 // chi apre l'app a quell'ora sia rimasto alzato fino a tardi, ma potrebbe
 // essersi anche appena svegliato prima dell'alba. "Buio fuori" descrive il
 // momento senza presumere in che direzione, funziona per entrambi i casi.
-function greeting(): string {
-const hour = new Date().getHours();
+//
+// 2026-09-13: l'ora veniva letta con new Date().getHours(), che restituisce
+// l'ora nel fuso del SERVER (Vercel gira in UTC), non quella dell'utente —
+// risultato: a Roma (UTC+2 in estate) saluto e promemoria sotto arrivavano
+// sistematicamente 2 ore in anticipo rispetto all'orario reale ("ancora
+// buio" già di giorno, promemoria di pranzo alle 16). Ora l'ora arriva da
+// romeHourAndDayKey() (src/lib/utils/romeTime.ts), che legge l'orario a
+// muro a Roma indipendentemente da dove gira il server.
+function greeting(hour: number): string {
 if (hour < 5) return "Buio fuori";
 if (hour < 12) return "Buongiorno";
 if (hour < 18) return "Buon pomeriggio";
 return "Buonasera";
 }
 
-// Indice del giorno restituito da Date.getHours()/getDay(): 0 = domenica,
-// come da spec JS. Le chiavi sono sigle inglesi fisse (non "lun"/"mar"...)
-// così restano stabili indipendentemente dalla lingua dell'interfaccia —
-// vedi weekly_reminders in migration 035 e la UI in
-// settings/profile/page.tsx dove l'utente le imposta.
-const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-
 // Tocco in più quando l'utente NON ha impostato un proprio promemoria per
 // oggi (vedi sotto): fasce orarie scelte apposta per essere universali —
 // tutti fanno colazione/pranzo/cena prima o poi, a differenza di "hai
 // fatto la skincare?" che presume chi legge. Se in futuro si aggiungono
 // altre fasce, stesso criterio: mai specifiche per un gruppo di persone.
-function timeBasedPrompt(): string | null {
-const hour = new Date().getHours();
+function timeBasedPrompt(hour: number): string | null {
 if (hour >= 5 && hour < 10) return "primo caffè?";
 if (hour >= 12 && hour < 15) return "hai già pensato a cosa pranzare?";
 if (hour >= 19 && hour < 22) return "cosa si cucina stasera?";
@@ -69,12 +71,16 @@ const { data: profile } = await supabase
 
 const firstName = profile?.full_name?.split(" ")[0] || "";
 
+// Ora e giorno della settimana a Roma (non del server, vedi commento sopra
+// su greeting()) — usati sia per il saluto sia per scegliere il
+// promemoria di oggi.
+const { hour, dayKey } = romeHourAndDayKey();
+
 // Promemoria personale di oggi (migration 035) se impostato, altrimenti
 // un tocco generico legato all'ora — mai entrambi insieme, la scelta
 // esplicita dell'utente vince sempre sul default.
-const todayKey = DAY_KEYS[new Date().getDay()];
-const personalReminder = (profile?.weekly_reminders as Record<string, string> | null)?.[todayKey];
-const extra = personalReminder ? `${lowerFirst(personalReminder)} oggi?` : timeBasedPrompt();
+const personalReminder = (profile?.weekly_reminders as Record<string, string> | null)?.[dayKey];
+const extra = personalReminder ? `${lowerFirst(personalReminder)} oggi?` : timeBasedPrompt(hour);
 
 return (
 <div className="bg-celeste-bg min-h-full pb-8 space-y-6">
@@ -99,7 +105,7 @@ testo, la stessa forma già installata come icona app. */}
 <p className="text-white/70 text-xs font-semibold tracking-wide uppercase">IMRECALL</p>
 </div>
 <h1 className="text-2xl font-extrabold text-white leading-tight mt-1">
-{greeting()}
+{greeting(hour)}
 {firstName ? `, ${firstName}` : ""}
 {extra ? ` — ${extra}` : ""}
 </h1>
