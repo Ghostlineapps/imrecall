@@ -138,11 +138,14 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="font-medium">Trasferimento dei dati fuori dallo Spazio Economico Europeo</h2>
         <p className="text-sm text-celeste-muted">
-          Axis Trade Partners Limited ha sede a Hong Kong e si avvale di fornitori con sede negli Stati
-          Uniti. Questo comporta un trasferimento dei tuoi dati personali al di fuori dello Spazio
-          Economico Europeo (SEE). Adottiamo le misure contrattuali e organizzative previste dalla
-          normativa applicabile per garantire un livello di protezione adeguato anche in questi
-          trasferimenti. Per domande su una specifica garanzia adottata, scrivici a info@axistpl.hk.
+          Il database che conserva i tuoi dati (Supabase) è ospitato nell&apos;Unione Europea (Irlanda).
+          L&apos;infrastruttura che elabora le richieste dell&apos;app (Vercel) opera invece da server
+          negli Stati Uniti, e anche alcuni fornitori a cui ci affidiamo per servizi specifici — come
+          OpenAI e Stripe — hanno sede negli Stati Uniti. Questo comporta un trasferimento dei tuoi dati
+          personali al di fuori dello Spazio Economico Europeo (SEE). Adottiamo le clausole contrattuali
+          standard e le altre misure previste dalla normativa applicabile per garantire un livello di
+          protezione adeguato anche in questi trasferimenti. Per domande su una specifica garanzia
+          adottata, scrivici a info@axistpl.hk.
         </p>
       </section>
 
