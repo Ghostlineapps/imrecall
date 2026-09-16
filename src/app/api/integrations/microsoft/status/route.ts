@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato (email collegata, stato
+// integrazione) — non deve mai essere cacheabile da un CDN o dal browser
+// (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const supabase = createClient();
@@ -15,9 +21,9 @@ export async function GET() {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!integration) return NextResponse.json({ connected: false });
+  if (!integration) return noStoreJson({ connected: false });
 
-  return NextResponse.json({
+  return noStoreJson({
     connected: true,
     microsoft_email: integration.microsoft_email,
     connected_at: integration.connected_at,
