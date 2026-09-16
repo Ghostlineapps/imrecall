@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Il GET sotto legge dati specifici dell'utente autenticato — non deve mai
+// essere cacheabile da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const supabase = createClient();
@@ -89,5 +94,5 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ memories });
+  return noStoreJson({ memories });
 }
