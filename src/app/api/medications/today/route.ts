@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { nowInRome } from "@/lib/utils/romeTime";
 import { medicationDueOn } from "@/lib/medications/recurrence";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Elenco delle dosi di oggi (una per farmaco attivo e orario), con lo stato
 // "presa/da prendere" — alimenta il widget "Farmaci di oggi" in Dashboard.
@@ -59,5 +64,5 @@ export async function GET() {
     )
     .sort((a, b) => a.time.localeCompare(b.time));
 
-  return NextResponse.json({ date: today, schedule });
+  return noStoreJson({ date: today, schedule });
 }
