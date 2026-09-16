@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Niente chiamate a OpenAI qui: a differenza degli altri upload, nome e
 // dose del farmaco li scrive l'utente stesso (dalla prescrizione del
@@ -179,5 +184,5 @@ export async function GET(req: NextRequest) {
   const { data: medications, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ medications });
+  return noStoreJson({ medications });
 }
