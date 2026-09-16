@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { computeCycleStatus, phaseDayRange, PHASE_LABELS } from "@/lib/cycle/predictions";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const MAX_PAST_PERIODS = 6;
 const MIN_PERIODS_FOR_INSIGHT = 2;
@@ -40,21 +45,21 @@ export async function GET() {
     .limit(MAX_PAST_PERIODS + 1);
 
   if (!settings || !periods || periods.length === 0) {
-    return NextResponse.json({ insight: null, reason: "not_onboarded" });
+    return noStoreJson({ insight: null, reason: "not_onboarded" });
   }
 
   const avgCycleLength = settings.average_cycle_length;
   const avgPeriodLength = settings.average_period_length;
 
   const status = computeCycleStatus(periods[0].start_date, avgCycleLength, avgPeriodLength, settings.cycles_tracked);
-  if (!status.phase) return NextResponse.json({ insight: null, reason: "not_onboarded" });
+  if (!status.phase) return noStoreJson({ insight: null, reason: "not_onboarded" });
 
   // Il ciclo in corso (il più recente) resta escluso: vogliamo solo cicli
   // passati e già conclusi, per confrontare "questa volta" con "le altre
   // volte", non con se stesso.
   const pastPeriods = periods.slice(1);
   if (pastPeriods.length < MIN_PERIODS_FOR_INSIGHT) {
-    return NextResponse.json({ insight: null, reason: "not_enough_cycles", phase: status.phase });
+    return noStoreJson({ insight: null, reason: "not_enough_cycles", phase: status.phase });
   }
 
   const [dayFrom, dayTo] = phaseDayRange(status.phase, avgCycleLength, avgPeriodLength);
@@ -96,10 +101,10 @@ export async function GET() {
     .map(([tag]) => tag);
 
   if (topTags.length === 0) {
-    return NextResponse.json({ insight: null, reason: "no_pattern_found", phase: status.phase });
+    return noStoreJson({ insight: null, reason: "no_pattern_found", phase: status.phase });
   }
 
-  return NextResponse.json({
+  return noStoreJson({
     insight: {
       phase: status.phase,
       phaseLabel: PHASE_LABELS[status.phase],
