@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { recalculateCyclePeriods } from "@/lib/cycle/recalculate";
 import { FLOW_OPTIONS, MOOD_OPTIONS, SYMPTOM_OPTIONS } from "@/lib/cycle/predictions";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const FLOW_SET = new Set<string>(FLOW_OPTIONS);
 const SYMPTOM_SET = new Set<string>(SYMPTOM_OPTIONS);
@@ -34,7 +39,7 @@ export async function GET(req: NextRequest) {
   const { data: logs, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ logs: logs ?? [] });
+  return noStoreJson({ logs: logs ?? [] });
 }
 
 /** Upsert del log di un giorno (flusso/sintomi/umore/temperatura/note) —
