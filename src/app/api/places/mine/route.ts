@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati di posizione specifici dell'utente — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Numero massimo di luoghi restituiti: Android permette al massimo 100
 // geofence registrati per app, quindi il client nativo ne registra al più
@@ -36,5 +41,5 @@ const { data: places, error } = await supabase
 
 if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-return NextResponse.json({ places: places ?? [] });
+return noStoreJson({ places: places ?? [] });
 }
