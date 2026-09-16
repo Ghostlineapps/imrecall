@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati di posizione specifici dell'utente — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Usato dal wizard di onboarding (/onboarding) subito dopo un import di
 // spostamenti (Google Maps o foto): peschiamo fino a 3 punti "sparsi" nel
@@ -32,7 +37,7 @@ export async function GET() {
 
   const total = count ?? 0;
   if (total === 0) {
-    return NextResponse.json({ highlights: [] });
+    return noStoreJson({ highlights: [] });
   }
 
   // Indici scelti per coprire l'intervallo temporale invece di prendere solo
@@ -69,5 +74,5 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({ highlights, total });
+  return noStoreJson({ highlights, total });
 }
