@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 /**
  * Il cuore della strategia di retention: sceglie UN SOLO candidato di
@@ -38,7 +43,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (!candidate) {
-    return NextResponse.json({ candidate: null });
+    return noStoreJson({ candidate: null });
   }
 
   // Marca come mostrato (rispetta il limite "max 1 notifica/giorno" anche
@@ -48,5 +53,5 @@ export async function GET(req: NextRequest) {
     .update({ sent: true, sent_at: new Date().toISOString() })
     .eq("id", candidate.id);
 
-  return NextResponse.json({ candidate });
+  return noStoreJson({ candidate });
 }
