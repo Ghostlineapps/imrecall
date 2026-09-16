@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { DIETARY_VALUES, INTEREST_VALUES } from "@/lib/constants/preferences";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Il GET sotto legge dati specifici dell'utente autenticato — non deve mai
+// essere cacheabile da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Preferenze di profilo (dieta + interessi) lette/scritte da
 // /settings/profile e consumate da /api/places/nearby per filtrare i
@@ -22,7 +27,7 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({
+  return noStoreJson({
     dietary_preferences: profile?.dietary_preferences ?? [],
     interests: profile?.interests ?? [],
     monthly_budget: profile?.monthly_budget ?? null,
