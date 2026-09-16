@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const MAX_MESSAGE_LENGTH = 200;
 
@@ -27,7 +32,7 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ reminders: reminders ?? [] });
+  return noStoreJson({ reminders: reminders ?? [] });
 }
 
 export async function POST(req: NextRequest) {
