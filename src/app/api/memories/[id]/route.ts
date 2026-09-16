@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Il GET sotto include un signed URL rigenerato ad ogni richiesta e dati
+// specifici dell'utente autenticato — non deve mai essere cacheabile da un
+// CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Bucket Storage per tipo di memoria — serve per rigenerare un signed URL
 // fresco ad ogni apertura del dettaglio (vedi sotto).
@@ -51,7 +57,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     related = (data ?? []).filter((m: any) => m.id !== memory.id);
   }
 
-  return NextResponse.json({ ...memory, media_url: mediaUrl, related });
+  return noStoreJson({ ...memory, media_url: mediaUrl, related });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
