@@ -7,6 +7,11 @@ import {
   transcriptionMinutesUsedThisMonth,
 } from "@/lib/subscription/limits";
 import { FOUNDER_SEATS_TOTAL } from "@/lib/stripe/client";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato (tier, minuti usati, ecc.) — non
+// deve mai essere cacheabile da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const supabase = createClient();
@@ -43,7 +48,7 @@ export async function GET() {
   ]);
   const founderCount: number = founderResult.count ?? 0;
 
-  return NextResponse.json({
+  return noStoreJson({
     ...profile,
     memory_count_this_month: memoriesThisMonth,
     memory_limit_this_month: FREE_MEMORIES_PER_MONTH,
