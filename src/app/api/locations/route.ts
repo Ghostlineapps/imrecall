@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati di posizione specifici dell'utente — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Quanti punti senza nome del luogo "ripariamo" ad ogni caricamento della
 // lista. Punti nuovi (live/checkin) hanno già place_name dal momento
@@ -43,5 +48,5 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ locations });
+  return noStoreJson({ locations });
 }
