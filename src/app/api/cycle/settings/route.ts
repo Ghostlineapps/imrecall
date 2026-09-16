@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const TRACKING_MODES = new Set(["general_health", "trying_to_conceive", "avoiding_pregnancy"]);
 
@@ -20,7 +25,7 @@ export async function GET() {
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ settings });
+  return noStoreJson({ settings });
 }
 
 /** Crea o aggiorna le impostazioni. average_cycle_length/
