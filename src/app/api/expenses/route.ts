@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const CATEGORIES = ["spesa", "trasporti", "ristorazione", "casa", "salute", "svago", "altro"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,7 +35,7 @@ export async function GET() {
     .eq("id", user.id)
     .single();
 
-  return NextResponse.json({ expenses: expenses ?? [], monthly_budget: profile?.monthly_budget ?? null });
+  return noStoreJson({ expenses: expenses ?? [], monthly_budget: profile?.monthly_budget ?? null });
 }
 
 // POST /api/expenses — inserimento manuale (tab "Spesa" della cattura),
