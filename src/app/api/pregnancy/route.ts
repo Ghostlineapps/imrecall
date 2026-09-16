@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Voci di partenza per la checklist "Da preparare", create automaticamente
 // quando l'utente imposta per la prima volta la data del parto — evita di
@@ -31,9 +36,9 @@ export async function GET() {
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!pregnancy) return NextResponse.json({ pregnancy: null });
+  if (!pregnancy) return noStoreJson({ pregnancy: null });
 
-  return NextResponse.json({ pregnancy: { ...pregnancy, ...computeProgress(pregnancy.due_date) } });
+  return noStoreJson({ pregnancy: { ...pregnancy, ...computeProgress(pregnancy.due_date) } });
 }
 
 export async function POST(req: NextRequest) {
