@@ -8,8 +8,9 @@ export const metadata = {
 // login, come richiesto sia dal Play Store sia dal GDPR per una privacy
 // policy. Tema celeste per coerenza visiva con Impostazioni, da cui è
 // linkata. Contenuto redatto sulla base delle funzionalità e dei fornitori
-// terzi effettivamente presenti nel codice al 2026-09-13 — va rivisto da un
-// legale prima della pubblicazione sul Play Store, in particolare per le
+// terzi effettivamente presenti nel codice al 2026-09-16 (aggiornata per
+// l'aggiunta di Vercel Analytics, vedi src/app/layout.tsx) — va rivisto da
+// un legale prima della pubblicazione sul Play Store, in particolare per le
 // clausole sul trasferimento dati extra-SEE e per l'eventuale nomina di un
 // rappresentante UE (art. 27 GDPR), dato che il Titolare ha sede a Hong Kong.
 export default function PrivacyPage() {
@@ -23,7 +24,7 @@ export default function PrivacyPage() {
 
       <div className="space-y-1">
         <h1 className="text-xl font-semibold">Informativa sulla Privacy</h1>
-        <p className="text-xs text-celeste-muted">Ultimo aggiornamento: 13 settembre 2026</p>
+        <p className="text-xs text-celeste-muted">Ultimo aggiornamento: 16 settembre 2026</p>
       </div>
 
       <section className="space-y-2">
@@ -98,6 +99,12 @@ export default function PrivacyPage() {
           l&apos;identificativo del tuo dispositivo necessario per inviarti le notifiche che hai
           attivato.
         </p>
+        <p className="text-sm text-celeste-muted">
+          <strong className="text-celeste-navy">Dati di utilizzo anonimi e aggregati:</strong>{" "}
+          tramite Vercel Analytics raccogliamo statistiche su come viene usata l&apos;app — ad esempio
+          pagine più visitate, paese di provenienza approssimativo e tipo di dispositivo — senza
+          identificarti individualmente. Maggiori dettagli nella sezione &quot;Cookie&quot; qui sotto.
+        </p>
       </section>
 
       <section className="space-y-2">
@@ -106,8 +113,10 @@ export default function PrivacyPage() {
           Usiamo i tuoi dati per fornirti le funzionalità dell&apos;app, generare riassunti e
           categorizzazioni automatiche dei contenuti tramite intelligenza artificiale, inviarti i
           promemoria e le notifiche che hai richiesto, elaborare i pagamenti dei piani a pagamento, e
-          suggerirti luoghi o promemoria in base alla posizione se hai attivato questa funzione. Non
-          usiamo i tuoi dati per pubblicità e non li vendiamo a terzi.
+          suggerirti luoghi o promemoria in base alla posizione se hai attivato questa funzione.
+          Usiamo inoltre le statistiche aggregate e anonime di Vercel Analytics per capire come viene
+          usata l&apos;app e migliorarla. Non usiamo i tuoi dati per pubblicità e non li vendiamo a
+          terzi.
         </p>
       </section>
 
@@ -118,7 +127,8 @@ export default function PrivacyPage() {
           categorie di dati più sensibili — dati sanitari, posizione, notifiche push, collegamento di
           Gmail/Outlook — ci basiamo sul tuo consenso esplicito, che presti attivando la relativa
           funzione e che puoi revocare in qualsiasi momento disattivandola dalle Impostazioni. Per la
-          sicurezza del servizio ci basiamo inoltre sul nostro legittimo interesse a prevenire abusi.
+          sicurezza del servizio e per le statistiche di utilizzo aggregate e anonime descritte sopra
+          ci basiamo inoltre sul nostro legittimo interesse a mantenere e migliorare il servizio.
         </p>
       </section>
 
@@ -130,8 +140,9 @@ export default function PrivacyPage() {
           automatici, categorizzazione dei contenuti ed elaborazione del testo delle email per il
           rilevamento appuntamenti), Stripe (pagamenti), Google e Microsoft (solo se colleghi
           rispettivamente Gmail o Outlook), Resend (invio delle email di promemoria), Vercel (hosting
-          dell&apos;applicazione) e OpenStreetMap (geocodifica e ricerca di luoghi vicini). Non
-          condividiamo i tuoi dati con terzi per finalità di marketing.
+          dell&apos;applicazione e statistiche di utilizzo anonime e aggregate tramite Vercel
+          Analytics) e OpenStreetMap (geocodifica e ricerca di luoghi vicini). Non condividiamo i tuoi
+          dati con terzi per finalità di marketing.
         </p>
       </section>
 
@@ -196,9 +207,14 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="font-medium">Cookie</h2>
         <p className="text-sm text-celeste-muted">
-          Usiamo esclusivamente cookie tecnici necessari al funzionamento del servizio, ad esempio per
-          mantenere la sessione di accesso o per il collegamento sicuro con Gmail/Outlook durante
-          l&apos;autenticazione. Non utilizziamo cookie di profilazione o di terze parti a scopo
+          Usiamo cookie tecnici necessari al funzionamento del servizio, ad esempio per mantenere la
+          sessione di accesso o per il collegamento sicuro con Gmail/Outlook durante l&apos;autenticazione.
+          Per capire come viene usata l&apos;app usiamo inoltre{" "}
+          <strong className="text-celeste-navy">Vercel Analytics</strong>, uno strumento di analisi del
+          traffico che, per come lo abbiamo configurato, non utilizza cookie e non crea un profilo
+          individuale della tua navigazione: raccoglie solo dati aggregati e anonimi (ad esempio pagine
+          più visitate, paese di provenienza approssimativo, tipo di dispositivo), che non permettono di
+          risalire alla tua identità. Non utilizziamo cookie di profilazione o di terze parti a scopo
           pubblicitario.
         </p>
       </section>
