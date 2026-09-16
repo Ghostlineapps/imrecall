@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { computeCycleStatus } from "@/lib/cycle/predictions";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
+// un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 /** Stato corrente del ciclo (giorno, fase, previsione prossimo ciclo e
  * finestra fertile) — usato sia dalla card in home sia dalla pagina
@@ -29,7 +34,7 @@ export async function GET() {
   const visible = profile?.tracks_cycle !== false;
 
   if (!visible) {
-    return NextResponse.json({ visible: false, status: null, settings: null, onboarded: false });
+    return noStoreJson({ visible: false, status: null, settings: null, onboarded: false });
   }
 
   const { data: settings } = await supabase
@@ -53,5 +58,5 @@ export async function GET() {
     settings?.cycles_tracked ?? 0
   );
 
-  return NextResponse.json({ visible: true, status, settings: settings ?? null, onboarded: !!settings });
+  return noStoreJson({ visible: true, status, settings: settings ?? null, onboarded: !!settings });
 }
