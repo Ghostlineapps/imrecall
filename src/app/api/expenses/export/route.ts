@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati specifici dell'utente autenticato, inclusi link firmati alle foto
+// degli scontrini — non deve mai essere cacheabile da un CDN o dal browser
+// (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -70,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   const { data: profile } = await supabase.from("profiles").select("full_name, monthly_budget").eq("id", user.id).single();
 
-  return NextResponse.json({
+  return noStoreJson({
     expenses: rows,
     from,
     to,
