@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Risultati filtrati sul profilo (dieta/interessi) dell'utente autenticato
+// — non deve mai essere cacheabile da un CDN o dal browser: una cache
+// per-URL (es. per lat/lon) mostrerebbe altrimenti i consigli filtrati di
+// un utente a un altro che richiede le stesse coordinate (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 /**
  * Consigli nei paraggi filtrati sul profilo (dieta + interessi). Usiamo
@@ -145,7 +152,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ recommendations: [], hasPreferences, error: "overpass_unavailable" });
+      return noStoreJson({ recommendations: [], hasPreferences, error: "overpass_unavailable" });
     }
 
     const json = await res.json();
@@ -174,9 +181,9 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => a.distance_km - b.distance_km)
       .slice(0, MAX_RESULTS);
 
-    return NextResponse.json({ recommendations, hasPreferences });
+    return noStoreJson({ recommendations, hasPreferences });
   } catch (err) {
     console.error("Overpass fallito", err);
-    return NextResponse.json({ recommendations: [], hasPreferences, error: "overpass_unavailable" });
+    return noStoreJson({ recommendations: [], hasPreferences, error: "overpass_unavailable" });
   }
 }
