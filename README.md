@@ -46,18 +46,20 @@ Aggiungi `OPENAI_API_KEY` in `.env.local`. Modelli usati:
 - `gpt-4o` — chat RAG, Vision (descrizione immagini + OCR + rilevamento scadenze)
 - `whisper-1` — trascrizione audio
 
-### 4. Geocoding (opzionale ma consigliato)
+### 4. Geocoding
 
-Per il resurfacing di prossimità serve un provider di geocoding. Il codice in
-`src/lib/utils/geocoding.ts` è pronto per Mapbox — aggiungi `GEOCODING_API_KEY`.
-Senza questa chiave, le memorie vengono comunque classificate ma i luoghi non
-vengono geocodificati, quindi il resurfacing "sei di nuovo a X" non funziona
-(sono comunque attivi: on-this-day, deadline, circle-back manuale).
+Il resurfacing di prossimità usa Nominatim (OpenStreetMap) per geocodifica e
+reverse geocoding — vedi `src/lib/utils/geocoding.ts`. Non serve nessuna API
+key: funziona subito, rispettando il limite "leggero" di Nominatim (~1
+richiesta al secondo).
 
 ### 5. Cron secret
 
 Genera una stringa casuale per `CRON_SECRET` — protegge l'endpoint
-`/api/cron/insights` che genera i candidati di resurfacing ogni notte.
+`/api/cron/insights` (e `/api/admin/founder-welcome`). I job schedulati più
+recenti (appuntamenti, promemoria di cattura giornaliera, sync Gmail/Outlook,
+farmaci) usano invece un secret dedicato ciascuno — vedi `.env.example` e i
+rispettivi file in `src/app/api/cron/`.
 
 ### 6. Avvia in locale
 
@@ -65,17 +67,19 @@ Genera una stringa casuale per `CRON_SECRET` — protegge l'endpoint
 npm run dev
 ```
 
-## Cosa manca per andare in produzione (non incluso in questo scaffold)
+## Stato del progetto
 
-- **Stripe**: le route `/api/stripe/*` sono nella struttura ma non ancora
-  implementate — vanno aggiunte checkout, portal, e gestione webhook.
-- **Export GDPR / cancellazione account**: previsti nel piano (Fase 9) ma non
-  ancora implementati.
-- **PWA offline queue**: la cattura offline con coda Zustand (`src/stores/`)
-  è nella struttura ma va implementata — per ora la cattura richiede connessione.
-- **Icone reali** per `public/manifest.json` (192px e 512px).
-- **Deploy**: collega il repo a Vercel, imposta le env vars, punta il dominio
-  `imrecall.app`.
+Non più solo uno scaffold: l'app è live in produzione su `www.imrecall.app`
+(Vercel), con autenticazione, upload/classificazione, resurfacing, piani a
+pagamento (checkout e webhook Stripe implementati in `/api/checkout` e
+`/api/webhooks/stripe`) e le integrazioni Google/Microsoft. Aree ancora da
+verificare o completare, non coperte da questo README in dettaglio:
+- **Export GDPR / cancellazione account**: la cancellazione va richiesta via
+email (vedi `/privacy`); un export/cancellazione self-service in app non è
+ancora implementato.
+- **PWA offline queue**: `src/stores/` contiene lo scaffold per una coda di
+cattura offline (Zustand) — verificare lo stato di implementazione prima di
+farci affidamento.
 
 ## Nota sul resurfacing di prossimità su iOS
 
