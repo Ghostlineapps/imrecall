@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { reverseGeocodeBestName } from "@/lib/utils/geocoding";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Dati di posizione specifici dell'utente — non deve mai essere cacheabile
+// da un CDN o dal browser (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 // Risponde a "dove mi trovavo il [data] alle [ora]?": trova il punto di
 // posizione registrato più vicino nel tempo al momento richiesto (prima o
@@ -40,7 +45,7 @@ export async function GET(req: NextRequest) {
 
   const candidates = [...(before ?? []), ...(after ?? [])];
   if (candidates.length === 0) {
-    return NextResponse.json({ match: null });
+    return noStoreJson({ match: null });
   }
 
   const closest = candidates.reduce((best, c) => {
@@ -54,7 +59,7 @@ export async function GET(req: NextRequest) {
     Math.abs(new Date(closest.recorded_at).getTime() - target.getTime()) / 60000
   );
 
-  return NextResponse.json({
+  return noStoreJson({
     match: {
       latitude: closest.latitude,
       longitude: closest.longitude,
