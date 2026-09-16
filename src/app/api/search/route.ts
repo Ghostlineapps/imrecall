@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embeddings";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Risultati specifici dell'utente autenticato — non deve mai essere
+// cacheabile da un CDN o dal browser: una cache per-URL (chiave "q")
+// mostrerebbe altrimenti i ricordi di un utente a un altro che cerca lo
+// stesso termine (vedi noStoreJson).
+export const dynamic = "force-dynamic";
 
 /**
  * Ricerca vera sui ricordi, con risultati cliccabili — non più solo una
@@ -19,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
-  if (!q) return NextResponse.json({ memories: [] });
+  if (!q) return noStoreJson({ memories: [] });
 
   const queryEmbedding = await generateEmbedding(q);
   const { data: matches, error } = await supabase.rpc("match_memories", {
@@ -31,5 +38,5 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ memories: matches ?? [] });
+  return noStoreJson({ memories: matches ?? [] });
 }
