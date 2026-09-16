@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -49,6 +50,10 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           {children}
         </ThemeProvider>
+        {/* Vercel Analytics: traffico aggregato/anonimo, senza cookie né
+            identificatori individuali — vedi src/app/privacy (sezione
+            "Cookie" e "Con chi condividiamo i dati"). Aggiunto 2026-09-16. */}
+        <Analytics />
       </body>
     </html>
   );
