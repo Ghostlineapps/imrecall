@@ -16,6 +16,7 @@ import {
   listPendingCaptures,
   markCaptureAttemptFailed,
   removePendingCapture,
+  setCaptureRemotePath,
   type PendingCapture,
   type PendingCaptureKind,
 } from "@/lib/offlineQueue";
@@ -55,6 +56,13 @@ interface CaptureQueueState {
   enqueue: (kind: PendingCaptureKind, blob: Blob, duration: number) => Promise<string>;
   /** Da chiamare quando un upload "diretto" (non dalla coda) va a buon fine, per ripulire la riga corrispondente. */
   markUploaded: (id: string) => Promise<void>;
+  /**
+   * 2026-09-17: registra che il blob di questa voce è già stato caricato su
+   * Storage a `remotePath` — vedi commento su PendingCapture.remotePath in
+   * offlineQueue.ts. Chiamata sia dal tentativo diretto (Audio/MeetingRecorder)
+   * sia da un retry dalla coda, subito dopo la fase 1 dell'upload.
+   */
+  setRemotePath: (id: string, remotePath: string) => Promise<void>;
   /** Tenta di caricare tutte le registrazioni in coda, una alla volta. */
   processQueue: () => Promise<void>;
 }
@@ -93,6 +101,11 @@ export const useCaptureQueueStore = create<CaptureQueueState>((set, get) => ({
     set((state) => ({ items: state.items.filter((i) => i.id !== id) }));
   },
 
+  setRemotePath: async (id, remotePath) => {
+    if (!id) return;
+    await setCaptureRemotePath(id, remotePath).catch(() => {});
+  },
+
   processQueue: async () => {
     if (get().processing) return;
     const pending = await listPendingCaptures().catch(() => [] as PendingCapture[]);
@@ -109,7 +122,10 @@ export const useCaptureQueueStore = create<CaptureQueueState>((set, get) => ({
         items: state.items.map((i) => (i.id === item.id ? { ...i, status: "uploading" } : i)),
       }));
       try {
-        await uploadCapture(item.kind, item.blob, item.duration);
+        await uploadCapture(item.kind, item.blob, item.duration, {
+          remotePath: item.remotePath,
+          onUploaded: (remotePath) => setCaptureRemotePath(item.id, remotePath).catch(() => {}),
+        });
         await removePendingCapture(item.id);
         anyUploaded = true;
         set((state) => ({ items: state.items.filter((i) => i.id !== item.id) }));
