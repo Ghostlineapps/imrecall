@@ -11,6 +11,8 @@ import { CircleBackButton } from "@/components/memory/CircleBackButton";
 import { MindMap } from "@/components/memory/MindMap";
 import { MindMapTree } from "@/components/memory/MindMapTree";
 import { MedicationSchedule } from "@/components/memory/MedicationSchedule";
+import { ShareButton } from "@/components/memory/ShareButton";
+import { shareText, shareAudio } from "@/lib/share";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -79,7 +81,13 @@ export default function MemoryDetailPage() {
           <img src={memory.media_url} alt="" className="rounded-xl w-full object-cover" />
         )}
         {(memory.type === "audio" || memory.type === "meeting") && memory.media_url && (
-          <audio controls src={memory.media_url} className="w-full" />
+          <div className="flex items-center gap-2">
+            <audio controls src={memory.media_url} className="w-full" />
+            <ShareButton
+              label="Condividi registrazione"
+              onShare={() => shareAudio(memory.media_url, memory.title || "registrazione")}
+            />
+          </div>
         )}
         {memory.type === "document" && memory.media_url && (
           <a
@@ -112,7 +120,23 @@ export default function MemoryDetailPage() {
 
       {hasStructuredSummary && (
         <div className="card-light">
-          <p className="text-xs text-celeste-muted mb-1">Riassunto</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-celeste-muted">Riassunto</p>
+            <ShareButton
+              label="Condividi riassunto"
+              onShare={() =>
+                shareText(
+                  memory.title || "Riassunto riunione",
+                  [
+                    memory.metadata.summary,
+                    topicsList.length ? `\nTemi:\n${topicsList.map((t: string) => `- ${t}`).join("\n")}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                )
+              }
+            />
+          </div>
           <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.metadata.summary}</p>
         </div>
       )}
@@ -139,7 +163,13 @@ export default function MemoryDetailPage() {
 
       {hasStructuredSummary && memory.metadata?.transcript && (
         <div className="card-light">
-          <p className="text-xs text-celeste-muted mb-1">Trascrizione</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-celeste-muted">Trascrizione</p>
+            <ShareButton
+              label="Condividi trascrizione"
+              onShare={() => shareText(memory.title || "Trascrizione riunione", memory.metadata.transcript)}
+            />
+          </div>
           <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap text-sm">
             {memory.metadata.transcript}
           </p>
