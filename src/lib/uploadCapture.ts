@@ -37,12 +37,29 @@ export class UploadError extends Error {
   permanent: boolean;
   /** messaggio pronto per essere mostrato all'utente, in italiano */
   userMessage: string;
+  /**
+   * 2026-09-17: prima questo campo non esisteva — ogni fallimento (rete
+   * assente, ma anche errori del tutto diversi: un Blob non più leggibile
+   * dopo essere stato riletto da IndexedDB, un errore di parsing, ecc.)
+   * veniva etichettato genericamente "network_error" con lo stesso messaggio
+   * "connessione debole", perdendo per sempre la causa reale. Risultato:
+   * un caricamento poteva restare bloccato in coda per ore con rete
+   * perfettamente funzionante, senza modo di capire perché (caso segnalato
+   * dall'utente: registrazione riunione mai caricata nonostante rete ok).
+   * Qui conserviamo il messaggio tecnico originale (nome+messaggio
+   * dell'eccezione reale, o status HTTP) accanto a quello mostrato
+   * all'utente — salvato in coda (vedi captureQueueStore.ts) e mostrato
+   * dopo alcuni tentativi falliti (vedi PendingUploadsIndicator.tsx), per
+   * poter diagnosticare un caso come questo senza dover indovinare.
+   */
+  technicalDetail: string;
 
-  constructor(code: string, permanent: boolean, userMessage: string) {
+  constructor(code: string, permanent: boolean, userMessage: string, technicalDetail?: string) {
     super(code);
     this.name = "UploadError";
     this.permanent = permanent;
     this.userMessage = userMessage;
+    this.technicalDetail = technicalDetail ?? code;
   }
 }
 
@@ -80,11 +97,18 @@ export async function uploadCapture(
   let res: Response;
   try {
     res = await fetch(ENDPOINTS[kind], { method: "POST", body: formData });
-  } catch {
+  } catch (err) {
+    // Non è detto che sia davvero la rete: qui finisce anche, ad es., un
+    // Blob non più valido dopo essere stato riletto da IndexedDB (bug noto
+    // di alcuni WebView Android). Il messaggio per l'utente resta generico
+    // (non possiamo distinguerlo con certezza), ma teniamo il dettaglio
+    // tecnico reale — vedi commento su UploadError.technicalDetail sopra.
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     throw new UploadError(
       "network_error",
       false,
-      "Connessione assente o instabile: la registrazione resta salvata e verrà caricata appena possibile."
+      "Connessione assente o instabile: la registrazione resta salvata e verrà caricata appena possibile.",
+      detail
     );
   }
 
@@ -92,7 +116,7 @@ export async function uploadCapture(
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
     const code = typeof data?.error === "string" ? data.error : "upload_failed";
     const permanent = PERMANENT_ERROR_CODES.has(code);
-    throw new UploadError(code, permanent, describeErrorCode(code, data));
+    throw new UploadError(code, permanent, describeErrorCode(code, data), `HTTP ${res.status}: ${code}`);
   }
 
   return res.json().catch(() => ({}));
