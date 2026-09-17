@@ -29,6 +29,18 @@ export interface PendingCapture {
   createdAt: number;
   attempts: number;
   lastError: string | null;
+  /**
+   * 2026-09-17: percorso su Supabase Storage se un tentativo precedente è
+   * già riuscito a caricare il blob (vedi src/lib/uploadCapture.ts — dal
+   * caricamento diretto client → Storage, che ha sostituito l'invio del
+   * file dentro il corpo della richiesta verso /api/upload/*). Se valorizzato,
+   * un retry salta il ri-caricamento del blob (già presente sul server) e
+   * riprova solo la "finalizzazione" (trascrizione + creazione memoria):
+   * senza questo, ogni ritentativo di una registrazione grande ricaricherebbe
+   * da capo decine di MB di audio, sprecando dati/batteria e lasciando file
+   * orfani su Storage a ogni tentativo fallito.
+   */
+  remotePath: string | null;
 }
 
 const DB_NAME = "imrecall-offline-queue";
@@ -74,6 +86,7 @@ export async function enqueueCapture(
     createdAt: Date.now(),
     attempts: 0,
     lastError: null,
+    remotePath: null,
   };
   const db = await openDB();
   const tx = db.transaction(STORE_NAME, "readwrite");
@@ -94,7 +107,11 @@ export async function listPendingCaptures(): Promise<PendingCapture[]> {
     tx.objectStore(STORE_NAME).getAll() as IDBRequest<PendingCapture[]>
   );
   db.close();
-  return items.sort((a, b) => a.createdAt - b.createdAt);
+  // `remotePath` non esisteva prima del 2026-09-17: normalizziamo a null i
+  // record salvati da versioni precedenti dell'app, che ne sono privi.
+  return items
+    .map((item) => ({ ...item, remotePath: item.remotePath ?? null }))
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 /** Rimuove una registrazione dalla coda: va chiamata SOLO a upload confermato riuscito
@@ -107,6 +124,28 @@ export async function removePendingCapture(id: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error("Rimozione dalla coda fallita"));
+  });
+  db.close();
+}
+
+/** Registra che il blob è già stato caricato su Supabase Storage a questo
+ * percorso, così un eventuale retry (fallito nella fase di finalizzazione,
+ * dopo l'upload) non ricarica da capo il file — vedi commento su
+ * `PendingCapture.remotePath` sopra. Chiamata da uploadCapture.ts subito
+ * dopo che l'upload diretto su Storage va a buon fine, prima ancora di
+ * sapere se la finalizzazione riuscirà. */
+export async function setCaptureRemotePath(id: string, remotePath: string): Promise<void> {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  const item = await runRequest<PendingCapture | undefined>(store.get(id));
+  if (item) {
+    item.remotePath = remotePath;
+    store.put(item);
+  }
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("Salvataggio percorso remoto fallito"));
   });
   db.close();
 }
