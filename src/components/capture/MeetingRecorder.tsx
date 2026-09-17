@@ -177,7 +177,11 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     const queueId = await useCaptureQueueStore.getState().enqueue("meeting", blob, seconds);
 
     try {
-      const data = await uploadCapture("meeting", blob, seconds);
+      const data = await uploadCapture("meeting", blob, seconds, {
+        onUploaded: (remotePath) => {
+          if (queueId) return useCaptureQueueStore.getState().setRemotePath(queueId, remotePath);
+        },
+      });
       if (queueId) await useCaptureQueueStore.getState().markUploaded(queueId);
       mutate("/api/memories");
 
