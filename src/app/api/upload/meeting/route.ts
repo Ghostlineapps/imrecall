@@ -125,47 +125,59 @@ TRASCRIZIONE:
 ${excerpt}`;
 }
 
+// Nodo di una mappa mentale strutturata (albero JSON), sostituisce la
+// vecchia sintassi mermaid: la versione precedente (buildMindMapMermaid,
+// rimossa) generava un SVG statico via mermaid.js — l'utente ha segnalato
+// (2026-09-17) che sul telefono sembrava "una semplice immagine" senza
+// possibilità di ingrandire, e ha chiesto qualcosa di più strutturato.
+// Il frontend (src/components/memory/MindMapTree.tsx) renderizza questo
+// albero come nodi veri (non un disegno), espandibili/collassabili al tocco.
+interface MindMapTreeNode {
+  label: string;
+  children?: MindMapTreeNode[];
+}
+
 // Converte la sezione MAPPA: (elenco puntato con indentazione, vedi prompt
-// sopra) generata da GPT in sintassi mermaid "mindmap", così il frontend
-// (src/components/memory/MindMap.tsx) può renderizzarla come diagramma
-// visivo invece di un elenco testuale — la funzionalità "mind map" tipo
-// Plaud Note richiesta dall'utente. Salvata in metadata.mind_map, non nel
-// campo `content` (che resta testo semplice, letto anche da ricerca/chat).
-function buildMindMapMermaid(rawMap: string, rootLabel: string): string | null {
+// sopra) generata da GPT in un albero JSON. Salvata in metadata.mind_map,
+// non nel campo `content` (che resta testo semplice, letto anche da
+// ricerca/chat). Le memorie create prima di questo cambio hanno ancora una
+// stringa mermaid in metadata.mind_map — il frontend distingue i due
+// formati con un semplice controllo di tipo (string vs object) e usa il
+// vecchio componente MindMap per quelle legacy.
+function buildMindMapTree(rawMap: string, rootLabel: string): MindMapTreeNode | null {
   if (!rawMap.trim()) return null;
 
-  // Il testo dei nodi mermaid non deve contenere caratteri con significato
-  // sintattico (parentesi/parentesi quadre/graffe aprono forme diverse di
-  // nodo, i due punti sono usati per le icone) — li rimuoviamo per sicurezza
-  // anche se il prompt chiede già di evitarli, e tronchiamo per non avere
-  // nodi enormi nel diagramma.
-  const sanitize = (s: string) =>
-    s
-      .replace(/^[-*]\s*/, "")
-      .replace(/[()[\]{}:"]/g, "")
-      .trim()
-      .slice(0, 80);
+  // Niente più limite di 80 caratteri né rimozione aggressiva di parentesi:
+  // qui il testo va semplicemente dentro un elemento DOM, non dentro una
+  // sintassi di diagramma con caratteri riservati — basta ripulire il
+  // trattino/asterisco iniziale del bullet.
+  const sanitize = (s: string) => s.replace(/^[-*]\s*/, "").trim().slice(0, 200);
 
-  const rootText = sanitize(rootLabel) || "Riunione";
-  const lines = ["mindmap", `  root((${rootText}))`];
+  const root: MindMapTreeNode = { label: sanitize(rootLabel) || "Riunione", children: [] };
+  let currentTopic: MindMapTreeNode | null = null;
 
-  let hasTopic = false;
   for (const rawLine of rawMap.split("\n")) {
     if (!rawLine.trim()) continue;
     const leadingSpaces = rawLine.match(/^(\s*)/)?.[1].length ?? 0;
     const label = sanitize(rawLine);
     if (!label) continue;
+
     // Il prompt chiede solo 2 livelli (argomento / sotto-punto), indentati
     // con 2 spazi nel testo di GPT — qualunque indentazione >= 2 diventa
-    // livello 2, il resto livello 1 sotto il nodo radice.
-    const indent = leadingSpaces >= 2 ? "      " : "    ";
-    lines.push(`${indent}${label}`);
-    if (leadingSpaces < 2) hasTopic = true;
+    // sotto-punto dell'ultimo argomento visto, il resto è un nuovo
+    // argomento di primo livello sotto la radice.
+    if (leadingSpaces >= 2 && currentTopic) {
+      currentTopic.children = currentTopic.children ?? [];
+      currentTopic.children.push({ label });
+    } else {
+      currentTopic = { label };
+      root.children!.push(currentTopic);
+    }
   }
 
-  // Niente diagramma se non è emerso nemmeno un argomento di primo livello
-  // (es. risposta malformata) — meglio nessuna mappa che una mappa vuota.
-  return hasTopic ? lines.join("\n") : null;
+  // Niente mappa se non è emerso nemmeno un argomento di primo livello (es.
+  // risposta malformata) — meglio nessuna mappa che una mappa vuota.
+  return root.children!.length ? root : null;
 }
 
 // Le trascrizioni + il riassunto GPT su una riunione lunga possono richiedere
@@ -284,7 +296,14 @@ export async function POST(req: NextRequest) {
   let detected: { type: "deadline" | "appointment"; title: string } | null = null;
   let deadlineMatch: RegExpMatchArray | null = null;
   let appointmentMatch: RegExpMatchArray | null = null;
-  let mindMapMermaid: string | null = null;
+  let mindMapTree: MindMapTreeNode | null = null;
+  // Riassunto/temi/trascrizione salvati anche separatamente (oltre al
+  // classico `content` concatenato, mantenuto per ricerca/chat) così il
+  // frontend può mostrarli come sezioni distinte invece di un unico blocco
+  // di testo — richiesto dall'utente 2026-09-17 insieme alla mappa
+  // interattiva. Assenti per registrazioni senza trascrizione utile
+  // (fallback: il frontend mostra `content` come prima).
+  let structuredMeta: { summary?: string; topics?: string; transcript?: string } = {};
 
   if (!fullTranscript || fullTranscript.trim().length < 20) {
     content =
@@ -325,7 +344,7 @@ export async function POST(req: NextRequest) {
     const topics = topicsMatch?.[1]?.trim() ?? "";
     const translatedTranscript = translatedMatch?.[1]?.trim() ?? "";
 
-    mindMapMermaid = buildMindMapMermaid(mapMatch?.[1] ?? "", title);
+    mindMapTree = buildMindMapTree(mapMatch?.[1] ?? "", title);
 
     const truncatedTranscript = fullTranscript.trim().slice(0, MAX_STORED_CHARS);
     const truncatedNote =
@@ -340,7 +359,21 @@ export async function POST(req: NextRequest) {
       : `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`;
 
     content = [summary, topics, transcriptSection].filter(Boolean).join("\n\n");
+    structuredMeta = {
+      ...(summary ? { summary } : {}),
+      ...(topics ? { topics } : {}),
+      transcript: transcriptSection,
+    };
   }
+
+  // Mappa mentale (albero JSON, vedi buildMindMapTree sopra e
+  // src/components/memory/MindMapTree.tsx per il rendering) + riassunto/temi/
+  // trascrizione separati (vedi structuredMeta sopra) — riusa la colonna
+  // `metadata` jsonb già esistente, nessuna migrazione DB necessaria.
+  // Oggetto vuoto (quindi `metadata` omesso dall'insert) per registrazioni
+  // senza trascrizione utile, dove non c'è nulla di strutturato da salvare.
+  const metadata: Record<string, unknown> = { ...structuredMeta };
+  if (mindMapTree) metadata.mind_map = mindMapTree;
 
   const { data: memory, error } = await supabase
     .from("memories")
@@ -355,12 +388,7 @@ export async function POST(req: NextRequest) {
       media_size: buffer.length,
       media_duration: duration,
       memory_date: new Date().toISOString(),
-      // Mappa mentale visiva (sintassi mermaid), generata dalla sezione
-      // MAPPA: del prompt — vedi buildMindMapMermaid sopra e
-      // src/components/memory/MindMap.tsx per il rendering. Riusa la
-      // colonna `metadata` jsonb già esistente, nessuna migrazione DB
-      // necessaria. Assente per registrazioni senza trascrizione utile.
-      ...(mindMapMermaid ? { metadata: { mind_map: mindMapMermaid } } : {}),
+      ...(Object.keys(metadata).length ? { metadata } : {}),
     })
     .select()
     .single();
