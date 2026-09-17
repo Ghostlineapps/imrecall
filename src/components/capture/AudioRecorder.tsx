@@ -171,7 +171,11 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
     const queueId = await useCaptureQueueStore.getState().enqueue("audio", blob, seconds);
 
     try {
-      await uploadCapture("audio", blob, seconds);
+      await uploadCapture("audio", blob, seconds, {
+        onUploaded: (remotePath) => {
+          if (queueId) return useCaptureQueueStore.getState().setRemotePath(queueId, remotePath);
+        },
+      });
       if (queueId) await useCaptureQueueStore.getState().markUploaded(queueId);
       mutate("/api/memories");
       onSaved();
