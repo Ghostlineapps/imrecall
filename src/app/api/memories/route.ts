@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 import { noStoreJson } from "@/lib/http/noStore";
 
@@ -51,9 +52,13 @@ export async function POST(req: NextRequest) {
 
   // Risposta istantanea: la classificazione AI (embedding, categoria, tag,
   // NER, rilevamento intenzione/luogo) avviene in background e non blocca
-  // l'utente. In produzione: usare waitUntil() su Vercel Pro+, con fallback
-  // alla Supabase Edge Function process-memory per il piano Hobby.
-  processMemory(memory.id).catch((err) => console.error("processMemory failed", err));
+  // l'utente. 2026-09-17: qui c'era un TODO ("usare waitUntil()...") mai
+  // implementato — senza, la funzione serverless termina appena risposto e
+  // la Promise di processMemory() viene uccisa a metà, lasciando la memoria
+  // bloccata per sempre su status "processing". waitUntil() (funziona anche
+  // su piano Hobby, non solo Pro+) tiene viva la funzione finché la Promise
+  // passata non si risolve, pur avendo già risposto alla richiesta.
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed", err)));
 
   return NextResponse.json(memory, { status: 201 });
 }
