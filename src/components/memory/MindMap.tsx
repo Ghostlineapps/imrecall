@@ -1,6 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ShareButton } from "./ShareButton";
+import { shareText } from "@/lib/share";
+
+// Le mappe legacy sono sintassi mermaid grezza (righe indentate con
+// ((titolo)), [nodo], {nodo}...); per la condivisione basta togliere i
+// delimitatori di forma e la riga "mindmap" per ottenere un elenco leggibile.
+function mermaidToText(syntax: string): string {
+  return syntax
+    .split("\n")
+    .filter((line) => line.trim() && !/^\s*mindmap\s*$/.test(line))
+    .map((line) => line.replace(/[[\](){}]/g, "").trimEnd())
+    .join("\n");
+}
 
 // Renderizza la mappa mentale visiva delle riunioni (richiesta dall'utente
 // come alternativa allo stile Plaud Note) a partire dalla sintassi mermaid
@@ -44,7 +57,14 @@ export function MindMap({ mermaidSyntax }: { mermaidSyntax: string }) {
 
   return (
     <div className="card overflow-x-auto">
-      <p className="text-xs text-white/40 mb-2">Mappa mentale</p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-white/40">Mappa mentale</p>
+        <ShareButton
+          label="Condividi mappa mentale"
+          onShare={() => shareText("Mappa mentale", mermaidToText(mermaidSyntax))}
+          className="text-white/40 hover:text-white/70"
+        />
+      </div>
       <div ref={containerRef} className="min-w-[280px] flex justify-center" />
     </div>
   );
