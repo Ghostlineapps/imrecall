@@ -178,10 +178,28 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  const duration = Number(formData.get("duration") ?? 0);
-  if (!file) return NextResponse.json({ error: "no_file" }, { status: 400 });
+  // 2026-09-17: il body è ora JSON leggero ({ path, duration }), non più il
+  // file. Il blob arriva su Storage caricato DIRETTAMENTE dal client (vedi
+  // src/lib/uploadCapture.ts), proprio per non passare mai più da qui: il
+  // tetto di 4.5MB imposto dalla piattaforma Vercel sul corpo delle
+  // richieste alle funzioni serverless (non aggirabile da codice, vedi
+  // https://vercel.com/docs/errors/FUNCTION_PAYLOAD_TOO_LARGE) rifiutava
+  // qualunque riunione oltre ~18-19 minuti PRIMA ancora che questo codice
+  // venisse eseguito — la causa reale del bug segnalato dall'utente
+  // ("riunione mai caricata nonostante rete ok"), diagnosticata solo grazie
+  // a UploadError.technicalDetail (vedi uploadCapture.ts).
+  const body = await req.json().catch(() => null);
+  const path = typeof body?.path === "string" ? body.path : null;
+  const duration = Number(body?.duration ?? 0);
+  if (!path) return NextResponse.json({ error: "no_file" }, { status: 400 });
+
+  // Le policy RLS (008_storage.sql) impedirebbero comunque a un utente di
+  // leggere il file di qualcun altro, ma controlliamo esplicitamente il
+  // prefisso per restituire un errore chiaro invece di un fallimento di
+  // download generico.
+  if (!path.startsWith(`${user.id}/`)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -190,9 +208,15 @@ export async function POST(req: NextRequest) {
     .single();
   const tier = profile?.subscription_tier;
 
+  // Da qui in poi, ogni uscita anticipata deve ripulire il file che il
+  // client ha già caricato su Storage (fase 1 in uploadCapture.ts) prima di
+  // chiamarci: non lo stiamo accettando, quindi non deve restare orfano.
+  const cleanupUpload = () => supabase.storage.from("audio").remove([path]).catch(() => {});
+
   // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
   // tipi — vedi src/lib/subscription/limits.ts.
   if (await isMemoryQuotaExceeded(supabase, user.id, tier)) {
+    await cleanupUpload();
     return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
   }
 
@@ -200,6 +224,7 @@ export async function POST(req: NextRequest) {
   // la leva di differenziazione free/premium.
   const maxSeconds = tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PAID;
   if (duration > maxSeconds) {
+    await cleanupUpload();
     return NextResponse.json({ error: "duration_exceeded", max: maxSeconds }, { status: 402 });
   }
 
@@ -209,30 +234,35 @@ export async function POST(req: NextRequest) {
   const minutesUsed = await transcriptionMinutesUsedThisMonth(supabase, user.id);
   const minutesQuota = transcriptionMinutesQuota(tier);
   if (limitsEnabled() && minutesUsed + duration / 60 > minutesQuota) {
+    await cleanupUpload();
     return NextResponse.json(
       { error: "monthly_minutes_exceeded", max_minutes: minutesQuota, used_minutes: Math.round(minutesUsed) },
       { status: 402 }
     );
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  // Il file è già su Storage (caricato direttamente dal client — vedi
+  // commento in cima alla funzione): lo scarichiamo qui per proseguire con
+  // trascrizione e analisi. Questo è un fetch in USCITA verso Supabase, non
+  // una richiesta in entrata verso di noi: nessun limite di piattaforma
+  // Vercel si applica, qualunque sia la dimensione del file.
+  const { data: downloaded, error: downloadError } = await supabase.storage.from("audio").download(path);
+  if (downloadError || !downloaded) {
+    // Non ripuliamo qui: se il file non è (ancora) su Storage non c'è nulla
+    // da rimuovere, e potrebbe trattarsi di un ritardo di propagazione
+    // transitorio — vale la pena ritentare (vedi uploadCapture.ts, che in
+    // questo caso riparte dalla finalizzazione senza ricaricare il blob).
+    return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+  }
+
+  const buffer = Buffer.from(await downloaded.arrayBuffer());
   if (buffer.length > MAX_FILE_BYTES) {
+    await cleanupUpload();
     return NextResponse.json(
       { error: "file_too_large", max_mb: MAX_FILE_BYTES / (1024 * 1024) },
       { status: 413 }
     );
   }
-
-  // Riusa il bucket "audio" e le sue policy RLS esistenti (008_storage.sql)
-  // — stesso schema di path delle note vocali, nessuna distinzione di
-  // bucket per tipo di memoria.
-  const path = `${user.id}/${crypto.randomUUID()}.webm`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("audio")
-    .upload(path, buffer, { contentType: "audio/webm" });
-
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
   const { data: signedUrl } = await supabase.storage.from("audio").createSignedUrl(path, 60 * 60);
 
