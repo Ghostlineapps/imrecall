@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import { reverseGeocodePlaceName } from "@/lib/utils/geocoding";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 
@@ -148,7 +149,7 @@ export async function POST(req: NextRequest) {
   // esplicitamente "true" quando l'utente carica un referto da lì.
   const isHealth = formData.get("is_health") === "true";
   // Vedi migrazione 022 / CaptureSheet expenseMode: la sezione Spese manda
-  // esplicitamente "true" quando l'utente carica uno scontrino da lì.
+  // esplicitamente "true" quando l'utente carica vno scontrino da lì.
   const isExpense = formData.get("is_expense") === "true";
   // Vedi migrazione 028 / CaptureSheet pregnancyMode: la sezione
   // Gravidanza manda esplicitamente "true" per i referti/esami caricati
@@ -331,7 +332,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  processMemory(memory.id).catch((err) => console.error("processMemory failed", err));
+  // waitUntil(): vedi commento in src/app/api/upload/audio/route.ts — senza,
+  // la funzione serverless termina prima che processMemory() finisce.
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed", err)));
 
   return NextResponse.json({ ...memory, detected }, { status: 201 });
 }
