@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import { noStoreJson } from "@/lib/http/noStore";
 
 // Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
@@ -163,7 +164,9 @@ export async function POST(req: NextRequest) {
   // Stessa pipeline asincrona (embedding, classificazione, NER) di tutte le
   // altre catture, così il farmaco resta cercabile come qualsiasi ricordo
   // ("che farmaco prendo alle 8?", "mi ricordi il Bivis?").
-  processMemory(memory.id).catch((err) => console.error("processMemory failed (farmaco)", err));
+  // waitUntil(): vedi commento in src/app/api/upload/audio/route.ts — senza,
+  // la funzione serverless termina prima che processMemory() finisca.
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed (farmaco)", err)));
 
   return NextResponse.json({ ...medication, memory }, { status: 201 });
 }
