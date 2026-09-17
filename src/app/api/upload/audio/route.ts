@@ -35,11 +35,22 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  const duration = Number(formData.get("duration") ?? 0);
+  // 2026-09-17: il body è ora JSON leggero ({ path, duration }), non più il
+  // file — vedi il commento equivalente (più esteso) in
+  // /api/upload/meeting/route.ts sul perché: il tetto di 4.5MB sul corpo
+  // delle richieste imposto dalla piattaforma Vercel sulle funzioni
+  // serverless rifiutava qui gli upload più lunghi prima ancora che questo
+  // codice venisse eseguito. Il blob arriva ora direttamente dal client a
+  // Supabase Storage (vedi src/lib/uploadCapture.ts).
+  const body = await req.json().catch(() => null);
+  const path = typeof body?.path === "string" ? body.path : null;
+  const duration = Number(body?.duration ?? 0);
 
-  if (!file) return NextResponse.json({ error: "no_file" }, { status: 400 });
+  if (!path) return NextResponse.json({ error: "no_file" }, { status: 400 });
+
+  if (!path.startsWith(`${user.id}/`)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -48,9 +59,15 @@ export async function POST(req: NextRequest) {
     .single();
   const tier = profile?.subscription_tier;
 
+  // Da qui in poi, ogni uscita anticipata deve ripulire il file che il
+  // client ha già caricato su Storage prima di chiamarci — vedi lo stesso
+  // pattern in /api/upload/meeting/route.ts.
+  const cleanupUpload = () => supabase.storage.from("audio").remove([path]).catch(() => {});
+
   // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
   // tipi — vedi src/lib/subscription/limits.ts.
   if (await isMemoryQuotaExceeded(supabase, user.id, tier)) {
+    await cleanupUpload();
     return NextResponse.json({ error: "limit_reached", limit: FREE_MEMORIES_PER_MONTH }, { status: 402 });
   }
 
@@ -58,6 +75,7 @@ export async function POST(req: NextRequest) {
   // MAX_FILE_BYTES sotto), non la leva di differenziazione free/premium.
   const maxSeconds = tier === "free" ? MAX_SECONDS_FREE : MAX_SECONDS_PREMIUM;
   if (duration > maxSeconds) {
+    await cleanupUpload();
     return NextResponse.json({ error: "duration_exceeded", max: maxSeconds }, { status: 402 });
   }
 
@@ -67,28 +85,31 @@ export async function POST(req: NextRequest) {
   const minutesUsed = await transcriptionMinutesUsedThisMonth(supabase, user.id);
   const minutesQuota = transcriptionMinutesQuota(tier);
   if (limitsEnabled() && minutesUsed + duration / 60 > minutesQuota) {
+    await cleanupUpload();
     return NextResponse.json(
       { error: "monthly_minutes_exceeded", max_minutes: minutesQuota, used_minutes: Math.round(minutesUsed) },
       { status: 402 }
     );
   }
 
-  const path = `${user.id}/${crypto.randomUUID()}.webm`;
-  const buffer = Buffer.from(await file.arrayBuffer());
+  // Il file è già su Storage (caricato direttamente dal client): lo
+  // scarichiamo qui per proseguire — fetch in USCITA verso Supabase, quindi
+  // nessun limite di piattaforma Vercel si applica.
+  const { data: downloaded, error: downloadError } = await supabase.storage.from("audio").download(path);
+  if (downloadError || !downloaded) {
+    // Non ripuliamo: il file potrebbe non essere ancora propagato su
+    // Storage (transitorio) — vale la pena ritentare la sola finalizzazione.
+    return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+  }
+
+  const buffer = Buffer.from(await downloaded.arrayBuffer());
 
   if (buffer.length > MAX_FILE_BYTES) {
+    await cleanupUpload();
     return NextResponse.json(
       { error: "file_too_large", max_mb: MAX_FILE_BYTES / (1024 * 1024) },
       { status: 413 }
     );
-  }
-
-  const { error: uploadError } = await supabase.storage
-    .from("audio")
-    .upload(path, buffer, { contentType: "audio/webm" });
-
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
   }
 
   // Trascrizione via Whisper
