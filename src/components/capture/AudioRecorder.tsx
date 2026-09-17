@@ -176,6 +176,11 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
       mutate("/api/memories");
       onSaved();
     } catch (err) {
+      // 2026-09-17: vedi commento equivalente in MeetingRecorder.tsx.
+      console.error(
+        "Upload nota vocale fallito",
+        err instanceof UploadError ? err.technicalDetail : err
+      );
       if (err instanceof UploadError && err.permanent) {
         // Il server ha rifiutato in modo definitivo (limite superato ecc.):
         // niente da ritentare, togliamo dalla coda e mostriamo l'errore.
