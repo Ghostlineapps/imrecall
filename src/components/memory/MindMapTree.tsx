@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { ShareButton } from "./ShareButton";
+import { shareText } from "@/lib/share";
 
 // Mappa mentale interattiva: sostituisce il vecchio disegno SVG statico
 // (src/components/memory/MindMap.tsx, generato da mermaid) che l'utente ha
@@ -66,10 +68,23 @@ function TreeNode({ node, depth }: { node: MindMapNode; depth: number }) {
   );
 }
 
+// Serializza l'albero in un elenco indentato leggibile fuori dall'app —
+// il pannello di condivisione nativo manda solo testo semplice, non i nodi
+// espandibili della UI.
+function treeToText(node: MindMapNode, depth = 0): string {
+  const prefix = depth === 0 ? "" : `${"  ".repeat(depth - 1)}- `;
+  const line = `${prefix}${node.label}`;
+  const children = node.children?.map((child) => treeToText(child, depth + 1)).join("\n") ?? "";
+  return children ? `${line}\n${children}` : line;
+}
+
 export function MindMapTree({ root }: { root: MindMapNode }) {
   return (
     <div className="card-light">
-      <p className="text-xs text-celeste-muted mb-1">Mappa mentale</p>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-celeste-muted">Mappa mentale</p>
+        <ShareButton label="Condividi mappa mentale" onShare={() => shareText(root.label, treeToText(root))} />
+      </div>
       <TreeNode node={root} depth={0} />
     </div>
   );
