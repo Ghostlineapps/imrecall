@@ -99,8 +99,18 @@ export default function MemoryDetailPage() {
             <FileUp size={16} /> Apri file originale
           </a>
         )}
-        {!hasStructuredSummary && (
-          <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
+        {!hasStructuredSummary && memory.content && (
+          // Note vocali brevi (type "audio") e riunioni "legacy"/senza
+          // trascrizione utile finiscono sempre qui (vedi hasStructuredSummary
+          // sopra): senza questo bottone la loro trascrizione non aveva alcun
+          // modo di essere condivisa — segnalato dall'utente 2026-09-17.
+          <div className="flex items-start gap-2">
+            <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap flex-1">{memory.content}</p>
+            <ShareButton
+              label={memory.type === "audio" || memory.type === "meeting" ? "Condividi trascrizione" : "Condividi testo"}
+              onShare={() => shareText(memory.title || "Ricordo", memory.content)}
+            />
+          </div>
         )}
 
         <p className="text-xs text-celeste-muted">
