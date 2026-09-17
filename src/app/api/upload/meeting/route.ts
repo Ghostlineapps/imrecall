@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import {
   FREE_MEMORIES_PER_MONTH,
   isMemoryQuotaExceeded,
@@ -338,7 +339,7 @@ export async function POST(req: NextRequest) {
 
   // Stessa logica di rilevamento automatico scadenze/appuntamenti già in
   // uso per foto e documenti — una riunione può benissimo generare un
-  // follow-up ("ci risentiamo la settimana prossima") o una scadenza.
+  // follow-up "ci risentiamo la settimana prossima") o una scadenza.
   if (deadlineMatch) {
     try {
       const parsed = JSON.parse(deadlineMatch[1]);
@@ -382,7 +383,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  processMemory(memory.id).catch((err) => console.error("processMemory failed (riunione)", err));
+  // waitUntil(): senza, la funzione serverless termina appena risposto e la
+  // Promise di processMemory() viene uccisa a metà prima di completare
+  // trascrizione/classificazione — è la causa esatta delle riunioni rimaste
+  // bloccate per sempre su "in elaborazione" (segnalato dall'utente
+  // 2026-09-17, riproducibile su qualunque memoria creata da questa route).
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed (riunione)", err)));
 
   return NextResponse.json({ ...memory, detected }, { status: 201 });
 }
