@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import {
   FREE_MEMORIES_PER_MONTH,
   isMemoryQuotaExceeded,
@@ -114,7 +115,12 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  processMemory(memory.id).catch((err) => console.error("processMemory failed", err));
+  // waitUntil(): senza, la funzione serverless termina appena risposto e la
+  // Promise di processMemory() viene uccisa a metà — è la causa esatta delle
+  // memorie rimaste bloccate per sempre su status "processing" (vedi
+  // commento 2026-09-17 in src/app/api/memories/route.ts, dove il problema
+  // era già stato segnalato come TODO ma mai risolto).
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed", err)));
 
   return NextResponse.json(memory, { status: 201 });
 }
