@@ -196,6 +196,15 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
         onSaved();
       }
     } catch (err) {
+      // 2026-09-17: log del dettaglio tecnico reale (vedi
+      // UploadError.technicalDetail in uploadCapture.ts) — prima qui non
+      // veniva registrato nulla, quindi un fallimento al primo tentativo
+      // (prima ancora di finire in coda ritentata da captureQueueStore.ts)
+      // non lasciava alcuna traccia diagnosticabile.
+      console.error(
+        "Upload riunione fallito",
+        err instanceof UploadError ? err.technicalDetail : err
+      );
       if (err instanceof UploadError && err.permanent) {
         if (queueId) await useCaptureQueueStore.getState().markUploaded(queueId);
         setError(err.userMessage);
