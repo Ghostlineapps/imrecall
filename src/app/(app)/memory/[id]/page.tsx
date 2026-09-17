@@ -9,9 +9,20 @@ import { RelatedMemories } from "@/components/memory/RelatedMemories";
 import { IntentionActions } from "@/components/memory/IntentionActions";
 import { CircleBackButton } from "@/components/memory/CircleBackButton";
 import { MindMap } from "@/components/memory/MindMap";
+import { MindMapTree } from "@/components/memory/MindMapTree";
 import { MedicationSchedule } from "@/components/memory/MedicationSchedule";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+// "TEMI:" arriva dal server come testo grezzo puntato (vedi
+// buildMeetingPrompt in /api/upload/meeting/route.ts) — qui lo spacchettiamo
+// in un vero elenco invece di mostrarlo come blocco di testo.
+function parseTopics(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean);
+}
 
 // 2026-08-26: palette celeste (decima schermata convertita). RelatedMemories,
 // IntentionActions, CircleBackButton, MindMap e MedicationSchedule restano
@@ -35,6 +46,20 @@ export default function MemoryDetailPage() {
       </div>
     );
   }
+
+  // Riassunto/temi/trascrizione separati (metadata, vedi
+  // structuredMeta in /api/upload/meeting/route.ts) invece dell'unico
+  // blocco di testo in `content` — richiesto dall'utente 2026-09-17.
+  // Assenti per riunioni create prima di questo cambio o senza
+  // trascrizione utile: in quel caso si torna al vecchio blocco unico
+  // (fallback più sotto).
+  const hasStructuredSummary = memory.type === "meeting" && !!memory.metadata?.summary;
+  const topicsList = hasStructuredSummary ? parseTopics(memory.metadata.topics ?? "") : [];
+  // Legacy: mappe generate prima del cambio sono una stringa mermaid
+  // (vecchio componente MindMap, disegno SVG statico); quelle nuove sono un
+  // albero JSON (nuovo MindMapTree, nodi espandibili al tocco).
+  const mindMap = memory.metadata?.mind_map;
+  const isLegacyMindMap = typeof mindMap === "string";
 
   return (
     <div className="bg-celeste-bg min-h-full px-4 pt-6 pb-4 space-y-5 text-celeste-navy">
@@ -66,7 +91,9 @@ export default function MemoryDetailPage() {
             <FileUp size={16} /> Apri file originale
           </a>
         )}
-        <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
+        {!hasStructuredSummary && (
+          <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.content}</p>
+        )}
 
         <p className="text-xs text-celeste-muted">
           {format(new Date(memory.memory_date), "d MMMM yyyy, HH:mm", { locale: it })}
@@ -83,8 +110,40 @@ export default function MemoryDetailPage() {
         )}
       </div>
 
-      {memory.type === "meeting" && memory.metadata?.mind_map && (
-        <MindMap mermaidSyntax={memory.metadata.mind_map} />
+      {hasStructuredSummary && (
+        <div className="card-light">
+          <p className="text-xs text-celeste-muted mb-1">Riassunto</p>
+          <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap">{memory.metadata.summary}</p>
+        </div>
+      )}
+
+      {topicsList.length > 0 && (
+        <div className="card-light">
+          <p className="text-xs text-celeste-muted mb-1">Temi</p>
+          <ul className="space-y-1.5 pl-4 list-disc marker:text-celeste-navy/25">
+            {topicsList.map((topic, i) => (
+              <li key={i} className="text-celeste-navy/80 text-sm leading-relaxed">
+                {topic}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {mindMap &&
+        (isLegacyMindMap ? (
+          <MindMap mermaidSyntax={mindMap} />
+        ) : (
+          <MindMapTree root={mindMap} />
+        ))}
+
+      {hasStructuredSummary && memory.metadata?.transcript && (
+        <div className="card-light">
+          <p className="text-xs text-celeste-muted mb-1">Trascrizione</p>
+          <p className="text-celeste-navy/80 leading-relaxed whitespace-pre-wrap text-sm">
+            {memory.metadata.transcript}
+          </p>
+        </div>
       )}
 
       {memory.type === "medication" && <MedicationSchedule memoryId={memory.id} />}
