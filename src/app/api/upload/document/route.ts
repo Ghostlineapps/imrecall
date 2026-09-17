@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { waitUntil } from "@vercel/functions";
 import { extractDocumentText } from "@/lib/documents/extractText";
 import {
   FREE_DOCUMENTS_PER_MONTH,
@@ -240,7 +241,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  processMemory(memory.id).catch((err) => console.error("processMemory failed (documento)", err));
+  // waitUntil(): vedi commento in src/app/api/upload/audio/route.ts — senza,
+  // la funzione serverless termina prima che processMemory() finisca.
+  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed (documento)", err)));
 
   return NextResponse.json({ ...memory, detected }, { status: 201 });
 }
