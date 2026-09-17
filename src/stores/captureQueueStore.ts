@@ -29,10 +29,20 @@ export interface PendingCaptureSummary {
   createdAt: number;
   status: PendingCaptureStatus;
   lastError: string | null;
+  /** 2026-09-17: esposto per mostrare il dettaglio tecnico dopo un po' di
+   * tentativi falliti — vedi PendingUploadsIndicator.tsx. */
+  attempts: number;
 }
 
 function toSummary(item: PendingCapture, status: PendingCaptureStatus): PendingCaptureSummary {
-  return { id: item.id, kind: item.kind, createdAt: item.createdAt, status, lastError: item.lastError };
+  return {
+    id: item.id,
+    kind: item.kind,
+    createdAt: item.createdAt,
+    status,
+    lastError: item.lastError,
+    attempts: item.attempts,
+  };
 }
 
 interface CaptureQueueState {
@@ -105,7 +115,14 @@ export const useCaptureQueueStore = create<CaptureQueueState>((set, get) => ({
         set((state) => ({ items: state.items.filter((i) => i.id !== item.id) }));
       } catch (err) {
         const permanent = err instanceof UploadError && err.permanent;
-        const message = err instanceof Error ? err.message : "upload_failed";
+        // 2026-09-17: prima qui finiva err.message, che per un UploadError è
+        // sempre solo il "code" (es. "network_error") — mai la causa reale.
+        // technicalDetail conserva l'eccezione originale (vedi
+        // uploadCapture.ts), così lastError in coda è utile per diagnosticare
+        // davvero, non solo per dire "qualcosa è fallito".
+        const message =
+          err instanceof UploadError ? err.technicalDetail : err instanceof Error ? err.message : "upload_failed";
+        console.error("Upload da coda offline fallito", item.kind, message);
         if (permanent) {
           // Il server ha già rifiutato definitivamente questo file: tenerlo
           // in coda vorrebbe dire ritentare per sempre un upload che non
@@ -116,7 +133,7 @@ export const useCaptureQueueStore = create<CaptureQueueState>((set, get) => ({
           await markCaptureAttemptFailed(item.id, message).catch(() => {});
           set((state) => ({
             items: state.items.map((i) =>
-              i.id === item.id ? { ...i, status: "error", lastError: message } : i
+              i.id === item.id ? { ...i, status: "error", lastError: message, attempts: i.attempts + 1 } : i
             ),
           }));
         }
