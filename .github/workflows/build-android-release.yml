@@ -1,0 +1,75 @@
+name: Build Android release AAB
+
+# Genera il file .aab firmato da caricare su Google Play Console. Va lanciato
+# a mano (nessun trigger automatico su push: ogni build consuma un
+# versionCode e non vogliamo build inutili a ogni commit). Prima di ogni
+# nuovo caricamento su Play Console, ricordati di alzare versionCode (e di
+# solito anche versionName) in android/app/build.gradle — Play Console
+# rifiuta un .aab con lo stesso versionCode di uno già caricato.
+#
+# Richiede questi Secrets nel repository (Settings → Secrets and variables →
+# Actions → New repository secret), da aggiungere manualmente — la chiave di
+# firma non deve mai passare da qui:
+#   ANDROID_KEYSTORE_BASE64   il file .jks codificato in base64
+#                             (es. `base64 -w0 imrecall-release.jks`)
+#   ANDROID_KEYSTORE_PASSWORD la password dello keystore
+#   ANDROID_KEY_ALIAS         imrecall
+#   ANDROID_KEY_PASSWORD      la password della chiave (uguale allo store
+#                             password per un keystore PKCS12)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      # Rigenera capacitor.config.json e gli asset nativi: non sono
+      # committati (vedi android/.gitignore), quindi senza questo passaggio
+      # il progetto Android in una checkout pulita non saprebbe nemmeno da
+      # dove caricare l'app (server.url in capacitor.config.ts).
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - name: Decode signing keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/imrecall-release.jks
+
+      - name: Write keystore.properties
+        run: |
+          cat > android/keystore.properties <<EOF
+          storeFile=imrecall-release.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Build signed release AAB
+        working-directory: android
+        run: ./gradlew bundleRelease
+
+      # File temporanei con la chiave/password in chiaro: rimossi subito
+      # dopo la build, non devono sopravvivere oltre questo job.
+      - name: Clean up signing files
+        if: always()
+        run: rm -f android/imrecall-release.jks android/keystore.properties
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imrecall-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
