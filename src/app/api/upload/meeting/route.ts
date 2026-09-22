@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
 import {
@@ -182,8 +182,19 @@ function buildMindMapTree(rawMap: string, rootLabel: string): MindMapTreeNode | 
 
 // Le trascrizioni + il riassunto GPT su una riunione lunga possono richiedere
 // più dei pochi secondi tipici delle altre route di upload — alziamo il
-// timeout al massimo consentito sul piano Hobby di Vercel.
+// timeout al massimo consentito sul piano Hobby di Vercel. Da quando (vedi
+// finalizeMeeting sotto) questo lavoro gira dopo la risposta al client via
+// waitUntil(), questo tetto governa il budget del lavoro in background, non
+// più il tempo che il client aspetta la risposta.
 export const maxDuration = 60;
+
+// Testo segnaposto salvato subito alla creazione, prima che
+// trascrizione/riassunto siano pronti — vedi il commento sopra
+// finalizeMeeting per il perché. MemoryCard.tsx mostra già la scritta
+// "in elaborazione…" per status "processing", quindi questo testo resta
+// visibile solo per una manciata di secondi/minuti nella maggior parte dei
+// casi.
+const PLACEHOLDER_CONTENT = "Trascrizione e riassunto in corso…";
 
 export async function POST(req: NextRequest) {
   const supabase = createClient();
@@ -278,175 +289,237 @@ export async function POST(req: NextRequest) {
 
   const { data: signedUrl } = await supabase.storage.from("audio").createSignedUrl(path, 60 * 60);
 
-  // Niente `language` fisso qui, a differenza della nota vocale breve
-  // (sempre in italiano): una call di lavoro può benissimo essere in
-  // inglese o in un'altra lingua — Whisper la rileva da solo, e il prompt
-  // sopra chiede comunque titolo/riassunto in italiano (= la "traduzione"
-  // richiesta nell'idea originale).
-  const transcription = await openai.audio.transcriptions.create({
-    file: new File([buffer], "meeting.webm", { type: "audio/webm" }),
-    model: "whisper-1",
-  });
-
-  const fullTranscript = transcription.text ?? "";
-  const durationMinutes = Math.max(1, Math.round(duration / 60));
-
-  let title = `Riunione del ${new Date().toLocaleDateString("it-IT")}`;
-  let content: string;
-  let detected: { type: "deadline" | "appointment"; title: string } | null = null;
-  let deadlineMatch: RegExpMatchArray | null = null;
-  let appointmentMatch: RegExpMatchArray | null = null;
-  let mindMapTree: MindMapTreeNode | null = null;
-  // Riassunto/temi/trascrizione salvati anche separatamente (oltre al
-  // classico `content` concatenato, mantenuto per ricerca/chat) così il
-  // frontend può mostrarli come sezioni distinte invece di un unico blocco
-  // di testo — richiesto dall'utente 2026-09-17 insieme alla mappa
-  // interattiva. Assenti per registrazioni senza trascrizione utile
-  // (fallback: il frontend mostra `content` come prima).
-  let structuredMeta: { summary?: string; topics?: string; transcript?: string } = {};
-
-  if (!fullTranscript || fullTranscript.trim().length < 20) {
-    content =
-      "Registrazione salvata, ma la trascrizione è risultata vuota (audio troppo silenzioso o non udibile). Il file resta comunque ascoltabile dal dettaglio del ricordo.";
-  } else {
-    const excerpt = fullTranscript.slice(0, 20000);
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: buildMeetingPrompt(excerpt, durationMinutes) }],
-      // Di default la risposta potrebbe essere tagliata: oltre ai campi
-      // strutturati ora chiediamo anche l'eventuale traduzione integrale
-      // della trascrizione (fino a 20.000 caratteri, vedi TRASCRIZIONE_TRADOTTA
-      // nel prompt), che da sola può valere qualche migliaio di token.
-      max_tokens: 16000,
-    });
-
-    const rawText = completion.choices[0].message.content ?? "";
-
-    deadlineMatch = rawText.match(/DEADLINE_DETECTED:\s*(\{.*\})/);
-    appointmentMatch = rawText.match(/APPOINTMENT_DETECTED:\s*(\{.*\})/);
-
-    const titleMatch = rawText.match(/TITOLO:\s*(.+)/);
-    const summaryMatch = rawText.match(
-      /RIASSUNTO:\s*([\s\S]*?)(?=\nTEMI:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
-    );
-    const topicsMatch = rawText.match(
-      /TEMI:\s*([\s\S]*?)(?=\nMAPPA:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
-    );
-    const mapMatch = rawText.match(
-      /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
-    );
-    // Presente solo se la riunione non era già in italiano (vedi prompt) —
-    // sempre l'ultima sezione della risposta, cattura tutto fino alla fine.
-    const translatedMatch = rawText.match(/TRASCRIZIONE_TRADOTTA:\s*([\s\S]*)$/);
-
-    if (titleMatch?.[1]?.trim()) title = titleMatch[1].trim();
-    const summary = summaryMatch?.[1]?.trim() ?? "";
-    const topics = topicsMatch?.[1]?.trim() ?? "";
-    const translatedTranscript = translatedMatch?.[1]?.trim() ?? "";
-
-    mindMapTree = buildMindMapTree(mapMatch?.[1] ?? "", title);
-
-    const truncatedTranscript = fullTranscript.trim().slice(0, MAX_STORED_CHARS);
-    const truncatedNote =
-      fullTranscript.trim().length > MAX_STORED_CHARS ? "\n\n[trascrizione troncata]" : "";
-
-    // Se la riunione non era in italiano, teniamo sia la traduzione (più
-    // comoda da leggere e utile per la ricerca semantica in italiano) sia
-    // il testo originale (per controllare termini esatti, nomi, cifre) —
-    // scelta dell'utente rispetto a "sostituisci l'originale" o "non tradurre".
-    const transcriptSection = translatedTranscript
-      ? `Trascrizione (tradotta in italiano):\n${translatedTranscript}${truncatedNote}\n\nTrascrizione originale:\n${truncatedTranscript}${truncatedNote}`
-      : `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`;
-
-    content = [summary, topics, transcriptSection].filter(Boolean).join("\n\n");
-    structuredMeta = {
-      ...(summary ? { summary } : {}),
-      ...(topics ? { topics } : {}),
-      transcript: transcriptSection,
-    };
-  }
-
-  // Mappa mentale (albero JSON, vedi buildMindMapTree sopra e
-  // src/components/memory/MindMapTree.tsx per il rendering) + riassunto/temi/
-  // trascrizione separati (vedi structuredMeta sopra) — riusa la colonna
-  // `metadata` jsonb già esistente, nessuna migrazione DB necessaria.
-  // Oggetto vuoto (quindi `metadata` omesso dall'insert) per registrazioni
-  // senza trascrizione utile, dove non c'è nulla di strutturato da salvare.
-  const metadata: Record<string, unknown> = { ...structuredMeta };
-  if (mindMapTree) metadata.mind_map = mindMapTree;
-
+  // 2026-09-22: trascrizione Whisper + riassunto GPT (sotto, in
+  // finalizeMeeting) su una riunione lunga possono da soli superare i 60s
+  // massimi del piano Hobby di Vercel se eseguiti PRIMA di rispondere al
+  // client — la funzione veniva uccisa a metà con un 504. uploadCapture.ts
+  // non distingue questo da un errore transitorio e ritenta la
+  // finalizzazione (fase 2, vedi lì), ma essendo lo STESSO lavoro sincrono
+  // il risultato è identico a ogni tentativo: la riunione non si carica mai,
+  // segnalato "Continua a fallire dopo 4 tentativi: HTTP 504: upload_failed"
+  // (utente, 2026-09-22). Creiamo subito la memoria con un segnaposto e
+  // rispondiamo: questo sblocca il client (la registrazione esce dalla coda
+  // di upload) in pochi secondi, indipendentemente da quanto dura la
+  // riunione. Trascrizione+analisi proseguono dopo, in background.
   const { data: memory, error } = await supabase
     .from("memories")
     .insert({
       user_id: user.id,
       type: "meeting",
       status: "processing",
-      title,
-      content,
+      title: `Riunione del ${new Date().toLocaleDateString("it-IT")}`,
+      content: PLACEHOLDER_CONTENT,
       media_path: path,
       media_url: signedUrl?.signedUrl,
       media_size: buffer.length,
       media_duration: duration,
       memory_date: new Date().toISOString(),
-      ...(Object.keys(metadata).length ? { metadata } : {}),
     })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Stessa logica di rilevamento automatico scadenze/appuntamenti già in
-  // uso per foto e documenti — una riunione può benissimo generare un
-  // follow-up "ci risentiamo la settimana prossima") o una scadenza.
-  if (deadlineMatch) {
-    try {
-      const parsed = JSON.parse(deadlineMatch[1]);
-      if (parsed?.title && parsed?.due_date) {
-        await supabase.from("deadlines").insert({
-          user_id: user.id,
-          memory_id: memory.id,
-          title: parsed.title,
-          due_date: parsed.due_date,
-          category: parsed.category ?? "altro",
-        });
-        detected = { type: "deadline", title: parsed.title };
-      }
-    } catch (err) {
-      console.error("Parsing DEADLINE_DETECTED fallito (riunione)", err, deadlineMatch[1]);
-    }
-  }
-
-  if (appointmentMatch) {
-    try {
-      const parsed = JSON.parse(appointmentMatch[1]);
-      const validDate =
-        typeof parsed?.appointment_at === "string" &&
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(parsed.appointment_at);
-
-      if (parsed?.title && validDate) {
-        await supabase.from("appointments").insert({
-          user_id: user.id,
-          memory_id: memory.id,
-          title: parsed.title,
-          appointment_at: romeLocalToUtcIso(parsed.appointment_at),
-          location: parsed.location ?? null,
-          source: "meeting",
-        });
-        detected = { type: "appointment", title: parsed.title };
-      } else {
-        console.error("APPOINTMENT_DETECTED con formato inatteso (riunione)", parsed);
-      }
-    } catch (err) {
-      console.error("Parsing APPOINTMENT_DETECTED fallito (riunione)", err, appointmentMatch[1]);
-    }
-  }
-
   // waitUntil(): senza, la funzione serverless termina appena risposto e la
-  // Promise di processMemory() viene uccisa a metà prima di completare
-  // trascrizione/classificazione — è la causa esatta delle riunioni rimaste
-  // bloccate per sempre su "in elaborazione" (segnalato dall'utente
-  // 2026-09-17, riproducibile su qualunque memoria creata da questa route).
-  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed (riunione)", err)));
+  // Promise di finalizeMeeting()/processMemory() viene uccisa a metà prima
+  // di completare — è la causa esatta delle riunioni rimaste bloccate per
+  // sempre su "in elaborazione" (segnalato dall'utente 2026-09-17,
+  // riproducibile su qualunque memoria creata da questa route).
+  waitUntil(
+    finalizeMeeting(memory.id, buffer, duration)
+      .then(() => processMemory(memory.id))
+      .catch((err) => console.error("finalizeMeeting failed (riunione)", err))
+  );
 
-  return NextResponse.json({ ...memory, detected }, { status: 201 });
+  // `detected` non è più disponibile subito (l'analisi è in background):
+  // il frontend (MeetingRecorder.tsx) perde il toast immediato "Appuntamento
+  // creato: ..." per questa route — la scadenza/appuntamento viene comunque
+  // creata/o appena finalizeMeeting completa, semplicemente senza notifica
+  // istantanea. Preferibile alla riunione che non si carica mai.
+  return NextResponse.json({ ...memory, detected: null }, { status: 201 });
+}
+
+// Trascrizione Whisper + riassunto/temi/mappa GPT + rilevamento
+// scadenza/appuntamento per una riunione già salvata come memoria
+// segnaposto (vedi POST sopra). Gira dentro waitUntil(), quindi DOPO che la
+// risposta HTTP è già stata inviata al client: usiamo createServiceClient()
+// invece del client legato ai cookie della richiesta (stesso motivo per cui
+// processMemory() in classification.ts fa lo stesso — un client basato su
+// cookie non è affidabile fuori dal ciclo di vita della richiesta che lo ha
+// creato).
+async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: number) {
+  const supabase = createServiceClient();
+
+  const { data: memory } = await supabase.from("memories").select("user_id").eq("id", memoryId).single();
+  if (!memory) return; // la memoria è stata cancellata nel frattempo
+
+  try {
+    // Niente `language` fisso qui, a differenza della nota vocale breve
+    // (sempre in italiano): una call di lavoro può benissimo essere in
+    // inglese o in un'altra lingua — Whisper la rileva da solo, e il prompt
+    // sotto chiede comunque titolo/riassunto in italiano (= la "traduzione"
+    // richiesta nell'idea originale).
+    const transcription = await openai.audio.transcriptions.create({
+      file: new File([buffer], "meeting.webm", { type: "audio/webm" }),
+      model: "whisper-1",
+    });
+
+    const fullTranscript = transcription.text ?? "";
+    const durationMinutes = Math.max(1, Math.round(duration / 60));
+
+    let title = `Riunione del ${new Date().toLocaleDateString("it-IT")}`;
+    let content: string;
+    let detected: { type: "deadline" | "appointment"; title: string } | null = null;
+    let deadlineMatch: RegExpMatchArray | null = null;
+    let appointmentMatch: RegExpMatchArray | null = null;
+    let mindMapTree: MindMapTreeNode | null = null;
+    // Riassunto/temi/trascrizione salvati anche separatamente (oltre al
+    // classico `content` concatenato, mantenuto per ricerca/chat) così il
+    // frontend può mostrarli come sezioni distinte invece di un unico blocco
+    // di testo. Assenti per registrazioni senza trascrizione utile
+    // (fallback: il frontend mostra `content` come prima).
+    let structuredMeta: { summary?: string; topics?: string; transcript?: string } = {};
+
+    if (!fullTranscript || fullTranscript.trim().length < 20) {
+      content =
+        "Registrazione salvata, ma la trascrizione è risultata vuota (audio troppo silenzioso o non udibile). Il file resta comunque ascoltabile dal dettaglio del ricordo.";
+    } else {
+      const excerpt = fullTranscript.slice(0, 20000);
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: buildMeetingPrompt(excerpt, durationMinutes) }],
+        // Di default la risposta potrebbe essere tagliata: oltre ai campi
+        // strutturati ora chiediamo anche l'eventuale traduzione integrale
+        // della trascrizione (fino a 20.000 caratteri, vedi TRASCRIZIONE_TRADOTTA
+        // nel prompt), che da sola può valere qualche migliaio di token.
+        max_tokens: 16000,
+      });
+
+      const rawText = completion.choices[0].message.content ?? "";
+
+      deadlineMatch = rawText.match(/DEADLINE_DETECTED:\s*(\{.*\})/);
+      appointmentMatch = rawText.match(/APPOINTMENT_DETECTED:\s*(\{.*\})/);
+
+      const titleMatch = rawText.match(/TITOLO:\s*(.+)/);
+      const summaryMatch = rawText.match(
+        /RIASSUNTO:\s*([\s\S]*?)(?=\nTEMI:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
+      );
+      const topicsMatch = rawText.match(
+        /TEMI:\s*([\s\S]*?)(?=\nMAPPA:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
+      );
+      const mapMatch = rawText.match(
+        /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
+      );
+      // Presente solo se la riunione non era già in italiano (vedi prompt) —
+      // sempre l'ultima sezione della risposta, cattura tutto fino alla fine.
+      const translatedMatch = rawText.match(/TRASCRIZIONE_TRADOTTA:\s*([\s\S]*)$/);
+
+      if (titleMatch?.[1]?.trim()) title = titleMatch[1].trim();
+      const summary = summaryMatch?.[1]?.trim() ?? "";
+      const topics = topicsMatch?.[1]?.trim() ?? "";
+      const translatedTranscript = translatedMatch?.[1]?.trim() ?? "";
+
+      mindMapTree = buildMindMapTree(mapMatch?.[1] ?? "", title);
+
+      const truncatedTranscript = fullTranscript.trim().slice(0, MAX_STORED_CHARS);
+      const truncatedNote =
+        fullTranscript.trim().length > MAX_STORED_CHARS ? "\n\n[trascrizione troncata]" : "";
+
+      // Se la riunione non era in italiano, teniamo sia la traduzione (più
+      // comoda da leggere e utile per la ricerca semantica in italiano) sia
+      // il testo originale (per controllare termini esatti, nomi, cifre) —
+      // scelta dell'utente rispetto a "sostituisci l'originale" o "non tradurre".
+      const transcriptSection = translatedTranscript
+        ? `Trascrizione (tradotta in italiano):\n${translatedTranscript}${truncatedNote}\n\nTrascrizione originale:\n${truncatedTranscript}${truncatedNote}`
+        : `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`;
+
+      content = [summary, topics, transcriptSection].filter(Boolean).join("\n\n");
+      structuredMeta = {
+        ...(summary ? { summary } : {}),
+        ...(topics ? { topics } : {}),
+        transcript: transcriptSection,
+      };
+    }
+
+    // Mappa mentale (albero JSON, vedi buildMindMapTree sopra e
+    // src/components/memory/MindMapTree.tsx per il rendering) + riassunto/temi/
+    // trascrizione separati (vedi structuredMeta sopra) — riusa la colonna
+    // `metadata` jsonb già esistente, nessuna migrazione DB necessaria.
+    const metadata: Record<string, unknown> = { ...structuredMeta };
+    if (mindMapTree) metadata.mind_map = mindMapTree;
+
+    await supabase
+      .from("memories")
+      .update({
+        title,
+        content,
+        ...(Object.keys(metadata).length ? { metadata } : {}),
+      })
+      .eq("id", memoryId);
+
+    // Stessa logica di rilevamento automatico scadenze/appuntamenti già in
+    // uso per foto e documenti — una riunione può benissimo generare un
+    // follow-up ("ci risentiamo la settimana prossima") o una scadenza.
+    if (deadlineMatch) {
+      try {
+        const parsed = JSON.parse(deadlineMatch[1]);
+        if (parsed?.title && parsed?.due_date) {
+          await supabase.from("deadlines").insert({
+            user_id: memory.user_id,
+            memory_id: memoryId,
+            title: parsed.title,
+            due_date: parsed.due_date,
+            category: parsed.category ?? "altro",
+          });
+          detected = { type: "deadline", title: parsed.title };
+        }
+      } catch (err) {
+        console.error("Parsing DEADLINE_DETECTED fallito (riunione)", err, deadlineMatch[1]);
+      }
+    }
+
+    if (appointmentMatch) {
+      try {
+        const parsed = JSON.parse(appointmentMatch[1]);
+        const validDate =
+          typeof parsed?.appointment_at === "string" &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(parsed.appointment_at);
+
+        if (parsed?.title && validDate) {
+          await supabase.from("appointments").insert({
+            user_id: memory.user_id,
+            memory_id: memoryId,
+            title: parsed.title,
+            appointment_at: romeLocalToUtcIso(parsed.appointment_at),
+            location: parsed.location ?? null,
+            source: "meeting",
+          });
+          detected = { type: "appointment", title: parsed.title };
+        } else {
+          console.error("APPOINTMENT_DETECTED con formato inatteso (riunione)", parsed);
+        }
+      } catch (err) {
+        console.error("Parsing APPOINTMENT_DETECTED fallito (riunione)", err, appointmentMatch[1]);
+      }
+    }
+
+    void detected; // non più restituito al client (vedi commento in POST) — tenuto per leggibilità/futuro uso
+  } catch (err) {
+    // Trascrizione o riassunto falliti (es. Whisper/OpenAI in errore): la
+    // memoria non deve restare bloccata per sempre su "in elaborazione" con
+    // il testo segnaposto — status "error" + un contenuto chiaro, come già
+    // fatto per la trascrizione vuota sopra. Il file audio resta comunque
+    // ascoltabile: non lo rimuoviamo.
+    console.error("finalizeMeeting: trascrizione/riassunto falliti", err);
+    await supabase
+      .from("memories")
+      .update({
+        status: "error",
+        error_message: err instanceof Error ? err.message : "unknown_error",
+        content:
+          "Registrazione salvata, ma l'elaborazione (trascrizione/riassunto) è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
+      })
+      .eq("id", memoryId);
+    throw err; // lascia loggare anche al chiamante (waitUntil in POST)
+  }
 }
