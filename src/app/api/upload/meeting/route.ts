@@ -13,11 +13,26 @@ import {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Tetto per singola riunione: 30 min Free, 90 min Premium — allineato al
-// monte ore mensile (60/600 min, vedi src/lib/subscription/limits.ts) e
-// allo stesso limite Free della nota vocale breve (/api/upload/audio).
+// Tetto per singola riunione: 30 min Free, 50 min Premium.
+// 2026-09-22: abbassato da 90 a 50 min dopo che una riunione di ~20 min è
+// rimasta bloccata per sempre su "in elaborazione" — con maxDuration=60 (il
+// valore di prima) il lavoro in background (Whisper + riassunto GPT, vedi
+// finalizeMeeting sotto) veniva ucciso a metà senza nemmeno un errore
+// visibile. Verificato nelle impostazioni Vercel del progetto (Settings →
+// Functions) che il vero tetto del piano Hobby con Fluid Compute abilitato
+// è oggi 300s, non 60s. Alzato maxDuration di conseguenza (sotto) e aggiunto
+// un abort esplicito (DEADLINE_MS, sotto) con un margine di sicurezza sotto
+// quel tetto. 50 min è la soglia che riteniamo ragionevolmente raggiungibile
+// in quel budget (trascrizione + riassunto insieme); senza dati reali sul
+// throughput di Whisper su file molto lunghi non possiamo garantirlo con
+// certezza oltre questo — per una garanzia solida sull'intera durata
+// originariamente promessa (90 min) andrebbe alzato il piano Vercel a Pro
+// (maxDuration fino a 1800s in beta) o implementata la segmentazione audio
+// lato client (non ancora fatta). Non più allineato 1:1 al monte ore
+// mensile (60/600 min, vedi src/lib/subscription/limits.ts): quello resta
+// la vera leva free/premium, questo è solo un tetto tecnico per riunione.
 const MAX_SECONDS_FREE = 1800; // 30 min
-const MAX_SECONDS_PAID = 5400; // 90 min
+const MAX_SECONDS_PAID = 3000; // 50 min
 
 // Whisper accetta al massimo 25MB per file. MeetingRecorder.tsx forza
 // esplicitamente un bitrate audio basso (32kbps, ok per il parlato) proprio
@@ -181,12 +196,19 @@ function buildMindMapTree(rawMap: string, rootLabel: string): MindMapTreeNode | 
 }
 
 // Le trascrizioni + il riassunto GPT su una riunione lunga possono richiedere
-// più dei pochi secondi tipici delle altre route di upload — alziamo il
-// timeout al massimo consentito sul piano Hobby di Vercel. Da quando (vedi
+// più dei pochi secondi tipici delle altre route di upload. Prima impostato
+// a 60s, rivelatosi il vero tetto troppo basso: una riunione di ~20 min è
+// rimasta bloccata per sempre su "in elaborazione" perché il lavoro in
+// background veniva ucciso a metà, senza errore. Verificato nelle
+// impostazioni Vercel del progetto (Settings → Functions) che il tetto
+// reale del piano Hobby con Fluid Compute abilitato è oggi 300s, non 60s —
+// 60 era una scelta prudente, non un limite di piattaforma. Da quando (vedi
 // finalizeMeeting sotto) questo lavoro gira dopo la risposta al client via
 // waitUntil(), questo tetto governa il budget del lavoro in background, non
-// più il tempo che il client aspetta la risposta.
-export const maxDuration = 60;
+// più il tempo che il client aspetta la risposta — vedi anche DEADLINE_MS
+// lì sotto, che aborta esplicitamente prima di arrivare a questo limite
+// invece di lasciare che Vercel uccida la funzione senza preavviso.
+export const maxDuration = 300;
 
 // Testo segnaposto salvato subito alla creazione, prima che
 // trascrizione/riassunto siano pronti — vedi il commento sopra
@@ -357,11 +379,23 @@ function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
 // processMemory() in classification.ts fa lo stesso — un client basato su
 // cookie non è affidabile fuori dal ciclo di vita della richiesta che lo ha
 // creato).
+// Margine di sicurezza sotto maxDuration (300s, sopra): abortiamo NOI le
+// chiamate a OpenAI (trascrizione + riassunto) prima che sia Vercel a
+// uccidere l'intera funzione. Senza questo, una riunione troppo lunga per
+// completare in tempo lasciava la memoria bloccata per sempre su "in
+// elaborazione" (bug segnalato 2026-09-22) — con l'abort esplicito
+// otteniamo invece un errore chiaro e immediato (vedi catch sotto), sempre,
+// indipendentemente da quanto la registrazione superi il budget disponibile.
+const DEADLINE_MS = 270_000;
+
 async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: number) {
   const supabase = createServiceClient();
 
   const { data: memory } = await supabase.from("memories").select("user_id").eq("id", memoryId).single();
   if (!memory) return; // la memoria è stata cancellata nel frattempo
+
+  const deadline = new AbortController();
+  const deadlineTimer = setTimeout(() => deadline.abort(), DEADLINE_MS);
 
   try {
     // Niente `language` fisso qui, a differenza della nota vocale breve
@@ -369,10 +403,13 @@ async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: numbe
     // inglese o in un'altra lingua — Whisper la rileva da solo, e il prompt
     // sotto chiede comunque titolo/riassunto in italiano (= la "traduzione"
     // richiesta nell'idea originale).
-    const transcription = await openai.audio.transcriptions.create({
-      file: new File([bufferToArrayBuffer(buffer)], "meeting.webm", { type: "audio/webm" }),
-      model: "whisper-1",
-    });
+    const transcription = await openai.audio.transcriptions.create(
+      {
+        file: new File([bufferToArrayBuffer(buffer)], "meeting.webm", { type: "audio/webm" }),
+        model: "whisper-1",
+      },
+      { signal: deadline.signal }
+    );
 
     const fullTranscript = transcription.text ?? "";
     const durationMinutes = Math.max(1, Math.round(duration / 60));
@@ -395,15 +432,18 @@ async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: numbe
         "Registrazione salvata, ma la trascrizione è risultata vuota (audio troppo silenzioso o non udibile). Il file resta comunque ascoltabile dal dettaglio del ricordo.";
     } else {
       const excerpt = fullTranscript.slice(0, 20000);
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: buildMeetingPrompt(excerpt, durationMinutes) }],
-        // Di default la risposta potrebbe essere tagliata: oltre ai campi
-        // strutturati ora chiediamo anche l'eventuale traduzione integrale
-        // della trascrizione (fino a 20.000 caratteri, vedi TRASCRIZIONE_TRADOTTA
-        // nel prompt), che da sola può valere qualche migliaio di token.
-        max_tokens: 16000,
-      });
+      const completion = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: buildMeetingPrompt(excerpt, durationMinutes) }],
+          // Di default la risposta potrebbe essere tagliata: oltre ai campi
+          // strutturati ora chiediamo anche l'eventuale traduzione integrale
+          // della trascrizione (fino a 20.000 caratteri, vedi TRASCRIZIONE_TRADOTTA
+          // nel prompt), che da sola può valere qualche migliaio di token.
+          max_tokens: 16000,
+        },
+        { signal: deadline.signal }
+      );
 
       const rawText = completion.choices[0].message.content ?? "";
 
@@ -520,16 +560,20 @@ async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: numbe
     // il testo segnaposto — status "error" + un contenuto chiaro, come già
     // fatto per la trascrizione vuota sopra. Il file audio resta comunque
     // ascoltabile: non lo rimuoviamo.
-    console.error("finalizeMeeting: trascrizione/riassunto falliti", err);
+    const timedOut = deadline.signal.aborted;
+    console.error("finalizeMeeting: trascrizione/riassunto falliti", timedOut ? "(timeout)" : "", err);
     await supabase
       .from("memories")
       .update({
         status: "error",
-        error_message: err instanceof Error ? err.message : "unknown_error",
-        content:
-          "Registrazione salvata, ma l'elaborazione (trascrizione/riassunto) è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
+        error_message: timedOut ? "processing_timeout" : err instanceof Error ? err.message : "unknown_error",
+        content: timedOut
+          ? "Registrazione salvata, ma è troppo lunga per essere elaborata entro i limiti della piattaforma. Prova con una registrazione più breve, o dividila in più registrazioni separate. Il file resta comunque ascoltabile dal dettaglio del ricordo."
+          : "Registrazione salvata, ma l'elaborazione (trascrizione/riassunto) è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
       })
       .eq("id", memoryId);
     throw err; // lascia loggare anche al chiamante (waitUntil in POST)
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 }
