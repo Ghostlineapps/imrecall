@@ -13,11 +13,23 @@ import {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Limite durata per tier: 30 min Free, 100 min Premium.
-// Nota: la premium era stata richiesta a 300 min, ma non è raggiungibile con
-// l'approccio attuale a singola chiamata Whisper — vedi MAX_FILE_BYTES sotto.
+// Limite durata per tier: 30 min Free, 50 min Premium.
+// 2026-09-22: abbassato da 100 a 50 min dopo che una riunione di soli ~20
+// min è rimasta bloccata per sempre su "in elaborazione" (vedi finalizeAudio
+// sotto e lo stesso fix, più esteso, in /api/upload/meeting/route.ts): con
+// maxDuration=60 il lavoro in background (Whisper) veniva ucciso a metà.
+// Ora maxDuration è a 300s (il vero tetto del piano Hobby con Fluid Compute
+// — verificato nelle impostazioni Vercel del progetto, non più 60s) e
+// finalizeAudio aborta esplicitamente la chiamata Whisper con un margine di
+// sicurezza (DEADLINE_MS) scrivendo un errore chiaro invece di restare
+// bloccata per sempre. 50 min è la soglia che riteniamo ragionevolmente
+// raggiungibile entro quel budget; senza dati reali sul throughput di
+// Whisper per file molto lunghi non possiamo garantirlo con certezza oltre
+// questo — per una garanzia solida andrebbe o alzato il piano Vercel a Pro
+// (maxDuration fino a 1800s) o implementata la segmentazione audio lato
+// client (non ancora fatta).
 const MAX_SECONDS_FREE = 1800; // 30 min
-const MAX_SECONDS_PREMIUM = 6000; // 100 min
+const MAX_SECONDS_PREMIUM = 3000; // 50 min
 
 // Whisper accetta al massimo 25MB per file (stesso limite gestito in
 // /api/upload/meeting/route.ts). AudioRecorder.tsx forza lo stesso bitrate
@@ -31,14 +43,22 @@ const MAX_SECONDS_PREMIUM = 6000; // 100 min
 const MAX_FILE_BYTES = 24 * 1024 * 1024;
 
 // 2026-09-22: prima questa route non dichiarava maxDuration, quindi usava il
-// tetto di default della piattaforma (più basso dei 60s espliciti già usati
-// da /api/upload/meeting) — una nota vocale abbastanza lunga poteva far
-// scadere la funzione a metà della trascrizione Whisper con un 504, prima
-// ancora di scrivere la memoria. Vedi lo stesso fix, più esteso, in
-// /api/upload/meeting/route.ts: qui la trascrizione gira in background
-// (finalizeAudio, sotto) via waitUntil() dopo aver già risposto al client,
-// quindi questo tetto governa solo il budget del lavoro in background.
-export const maxDuration = 60;
+// tetto di default della piattaforma — una nota vocale abbastanza lunga
+// poteva far scadere la funzione a metà della trascrizione Whisper con un
+// 504, prima ancora di scrivere la memoria. Poi impostato a 60s (stesso
+// fix, più esteso, in /api/upload/meeting/route.ts), ma si è rivelato
+// insufficiente: una registrazione da ~20 min è rimasta bloccata per sempre
+// su "in elaborazione" perché il lavoro in background veniva ucciso a metà
+// trascrizione, senza nemmeno un errore visibile. Verificato nelle
+// impostazioni Vercel del progetto (Settings → Functions) che il vero tetto
+// del piano Hobby con Fluid Compute abilitato è oggi 300s, non 60s — 60 era
+// un valore scelto per prudenza, non il limite reale della piattaforma.
+// La trascrizione gira in background (finalizeAudio, sotto) via waitUntil()
+// dopo aver già risposto al client, quindi questo tetto governa solo il
+// budget del lavoro in background — vedi anche DEADLINE_MS lì sotto, che
+// aborta esplicitamente prima di arrivare a questo limite invece di lasciare
+// che Vercel uccida la funzione senza preavviso.
+export const maxDuration = 300;
 
 // Testo segnaposto salvato subito alla creazione, prima che la trascrizione
 // sia pronta — vedi finalizeAudio sotto. MemoryCard.tsx mostra già la
@@ -179,31 +199,51 @@ function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
 // invece del client legato ai cookie della richiesta — stesso motivo
 // spiegato in /api/upload/meeting/route.ts (finalizeMeeting) e in
 // processMemory() (classification.ts).
+// Margine di sicurezza sotto maxDuration (300s, sopra): abortiamo NOI la
+// chiamata Whisper prima che sia Vercel a uccidere l'intera funzione. Senza
+// questo, un file troppo lungo per completare in tempo lasciava la memoria
+// bloccata per sempre su "in elaborazione" (bug segnalato 2026-09-22) — con
+// l'abort esplicito otteniamo invece un errore chiaro e immediato (vedi
+// catch sotto), sempre, indipendentemente da quanto la registrazione superi
+// il budget disponibile.
+const DEADLINE_MS = 270_000;
+
 async function finalizeAudio(memoryId: string, buffer: Buffer) {
   const supabase = createServiceClient();
 
+  const deadline = new AbortController();
+  const deadlineTimer = setTimeout(() => deadline.abort(), DEADLINE_MS);
+
   try {
-    const transcription = await openai.audio.transcriptions.create({
-      file: new File([bufferToArrayBuffer(buffer)], "recording.webm", { type: "audio/webm" }),
-      model: "whisper-1",
-      language: "it",
-    });
+    const transcription = await openai.audio.transcriptions.create(
+      {
+        file: new File([bufferToArrayBuffer(buffer)], "recording.webm", { type: "audio/webm" }),
+        model: "whisper-1",
+        language: "it",
+      },
+      { signal: deadline.signal }
+    );
 
     await supabase.from("memories").update({ content: transcription.text }).eq("id", memoryId);
   } catch (err) {
     // La memoria non deve restare bloccata per sempre su "in elaborazione"
-    // con il testo segnaposto se Whisper fallisce. Il file audio resta
+    // con il testo segnaposto se Whisper fallisce (o se abbiamo dovuto
+    // abortire per il timeout, vedi DEADLINE_MS sopra). Il file audio resta
     // comunque ascoltabile: non lo rimuoviamo.
-    console.error("finalizeAudio: trascrizione fallita", err);
+    const timedOut = deadline.signal.aborted;
+    console.error("finalizeAudio: trascrizione fallita", timedOut ? "(timeout)" : "", err);
     await supabase
       .from("memories")
       .update({
         status: "error",
-        error_message: err instanceof Error ? err.message : "unknown_error",
-        content:
-          "Registrazione salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
+        error_message: timedOut ? "processing_timeout" : err instanceof Error ? err.message : "unknown_error",
+        content: timedOut
+          ? "Registrazione salvata, ma è troppo lunga per essere trascritta entro i limiti della piattaforma. Prova con una registrazione più breve. Il file resta comunque ascoltabile dal dettaglio del ricordo."
+          : "Registrazione salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
       })
       .eq("id", memoryId);
     throw err;
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 }
