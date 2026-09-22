@@ -339,6 +339,16 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ...memory, detected: null }, { status: 201 });
 }
 
+// Copia esplicita in un ArrayBuffer "piatto": il tipo di Buffer.buffer è
+// ArrayBufferLike (può includere SharedArrayBuffer), che il DOM lib non
+// accetta come BlobPart per File/Blob — vedi lo stesso helper in
+// /api/upload/audio/route.ts.
+function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const arrayBuffer = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(buffer);
+  return arrayBuffer;
+}
+
 // Trascrizione Whisper + riassunto/temi/mappa GPT + rilevamento
 // scadenza/appuntamento per una riunione già salvata come memoria
 // segnaposto (vedi POST sopra). Gira dentro waitUntil(), quindi DOPO che la
@@ -360,7 +370,7 @@ async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: numbe
     // sotto chiede comunque titolo/riassunto in italiano (= la "traduzione"
     // richiesta nell'idea originale).
     const transcription = await openai.audio.transcriptions.create({
-      file: new File([buffer], "meeting.webm", { type: "audio/webm" }),
+      file: new File([bufferToArrayBuffer(buffer)], "meeting.webm", { type: "audio/webm" }),
       model: "whisper-1",
     });
 
