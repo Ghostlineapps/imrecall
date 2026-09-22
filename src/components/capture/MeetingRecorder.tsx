@@ -64,7 +64,17 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
     try {
       // Richiesta esplicita del permesso nativo, inline (non delegata a un
       // helper importato da un altro modulo — vedi nativeGeolocation.ts,
-      // commento 2026-09-01, per il perché) con timeout di guardia di 3s.
+      // commento 2026-09-01, per il perché).
+      //
+      // 2026-09-22: stesso fix di AudioRecorder.tsx — il timeout di guardia
+      // era prima di soli 3s, troppo poco perché l'utente legga e risponda
+      // al dialog di sistema Android per RECORD_AUDIO (quasi sempre il caso
+      // alla primissima registrazione). Se la risposta arrivava anche solo
+      // un attimo dopo, si procedeva a getUserMedia() prima che il permesso
+      // risultasse concesso, e onPermissionRequest (MainActivity.java) lo
+      // negava sempre — segnalato dall'utente 2026-09-22 durante il test
+      // pre-Play Store. Alzato a un tempo realistico; resta solo rete di
+      // sicurezza contro un plugin che non risponde mai.
       try {
         const core = await import("@capacitor/core");
         if (core.Capacitor.isNativePlatform()) {
@@ -72,14 +82,27 @@ export function MeetingRecorder({ onSaved }: { onSaved: () => void }) {
             requestMicrophonePermission(): Promise<{ granted: boolean }>;
           }>("NativeBridge");
           if (bridge) {
-            await Promise.race([
-              bridge.requestMicrophonePermission(),
-              new Promise((resolve) => setTimeout(resolve, 3000)),
+            const result = await Promise.race([
+              bridge.requestMicrophonePermission().then((r) => ({ ...r, timedOut: false as const })),
+              new Promise<{ granted: boolean; timedOut: true }>((resolve) =>
+                setTimeout(() => resolve({ granted: false, timedOut: true }), 20000)
+              ),
             ]);
+            if (!result.granted) {
+              const deniedErr = new Error(
+                result.timedOut
+                  ? "Permesso microfono non confermato in tempo. Riprova e concedi l'accesso quando richiesto dal telefono."
+                  : "Permesso microfono negato. Vai in Impostazioni del telefono → App → IMRECALL → Autorizzazioni e attiva il microfono, poi riprova."
+              );
+              (deniedErr as Error & { micPermissionDenied?: boolean }).micPermissionDenied = true;
+              throw deniedErr;
+            }
           }
         }
-      } catch {
-        // Non bloccante: su web/PWA il modulo nativo non esiste.
+      } catch (err) {
+        // Rilanciamo solo il nostro errore esplicito di permesso negato —
+        // vedi lo stesso commento in AudioRecorder.tsx.
+        if ((err as { micPermissionDenied?: boolean } | undefined)?.micPermissionDenied) throw err;
       }
 
       let stream: MediaStream;
