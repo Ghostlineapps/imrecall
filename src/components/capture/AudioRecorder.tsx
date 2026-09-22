@@ -65,7 +65,23 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
     try {
       // Richiesta esplicita del permesso nativo, inline (non delegata a un
       // helper importato da un altro modulo — vedi nativeGeolocation.ts,
-      // commento 2026-09-01, per il perché) con timeout di guardia di 3s.
+      // commento 2026-09-01, per il perché).
+      //
+      // 2026-09-22: il timeout di guardia era prima di soli 3s. Il dialog di
+      // sistema Android per RECORD_AUDIO è modale e l'utente deve leggerlo e
+      // rispondere: 3s bastano appena per chi lo tocca via riflesso, non per
+      // chi lo legge davvero (quasi sempre il caso alla primissima
+      // registrazione). Se l'utente rispondeva anche solo un attimo dopo i
+      // 3s, il codice procedeva comunque a getUserMedia() PRIMA che il
+      // permesso risultasse concesso: onPermissionRequest in
+      // MainActivity.java lo negava allora sempre, mostrando "permesso
+      // negato" anche se l'utente stava per concederlo — segnalato
+      // dall'utente 2026-09-22 durante il test pre-Play Store ("mancava
+      // l'autorizzazione per il microfono"). Alzato a un tempo realistico
+      // per un dialog che un umano deve leggere; resta comunque solo una
+      // rete di sicurezza contro un plugin che non risponde mai (il caso
+      // normale è che la Promise si risolve appena l'utente tocca
+      // Consenti/Nega, molto prima di questo tetto).
       try {
         const core = await import("@capacitor/core");
         if (core.Capacitor.isNativePlatform()) {
@@ -73,14 +89,29 @@ export function AudioRecorder({ onSaved }: { onSaved: () => void }) {
             requestMicrophonePermission(): Promise<{ granted: boolean }>;
           }>("NativeBridge");
           if (bridge) {
-            await Promise.race([
-              bridge.requestMicrophonePermission(),
-              new Promise((resolve) => setTimeout(resolve, 3000)),
+            const result = await Promise.race([
+              bridge.requestMicrophonePermission().then((r) => ({ ...r, timedOut: false as const })),
+              new Promise<{ granted: boolean; timedOut: true }>((resolve) =>
+                setTimeout(() => resolve({ granted: false, timedOut: true }), 20000)
+              ),
             ]);
+            if (!result.granted) {
+              const deniedErr = new Error(
+                result.timedOut
+                  ? "Permesso microfono non confermato in tempo. Riprova e concedi l'accesso quando richiesto dal telefono."
+                  : "Permesso microfono negato. Vai in Impostazioni del telefono → App → IMRECALL → Autorizzazioni e attiva il microfono, poi riprova."
+              );
+              (deniedErr as Error & { micPermissionDenied?: boolean }).micPermissionDenied = true;
+              throw deniedErr;
+            }
           }
         }
-      } catch {
-        // Non bloccante: su web/PWA il modulo nativo non esiste.
+      } catch (err) {
+        // Rilanciamo solo il nostro errore esplicito di permesso negato:
+        // qualunque altro caso (web/PWA senza modulo nativo, plugin non
+        // registrato, eccezione imprevista) non deve bloccare tutto qui —
+        // lasciamo che sia getUserMedia sotto a gestire/segnalare.
+        if ((err as { micPermissionDenied?: boolean } | undefined)?.micPermissionDenied) throw err;
       }
 
       let stream: MediaStream;
