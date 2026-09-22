@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
 import {
@@ -29,6 +29,21 @@ const MAX_SECONDS_PREMIUM = 6000; // 100 min
 // registrazione in più segmenti trascritti separatamente (lavoro più
 // corposo, non ancora fatto).
 const MAX_FILE_BYTES = 24 * 1024 * 1024;
+
+// 2026-09-22: prima questa route non dichiarava maxDuration, quindi usava il
+// tetto di default della piattaforma (più basso dei 60s espliciti già usati
+// da /api/upload/meeting) — una nota vocale abbastanza lunga poteva far
+// scadere la funzione a metà della trascrizione Whisper con un 504, prima
+// ancora di scrivere la memoria. Vedi lo stesso fix, più esteso, in
+// /api/upload/meeting/route.ts: qui la trascrizione gira in background
+// (finalizeAudio, sotto) via waitUntil() dopo aver già risposto al client,
+// quindi questo tetto governa solo il budget del lavoro in background.
+export const maxDuration = 60;
+
+// Testo segnaposto salvato subito alla creazione, prima che la trascrizione
+// sia pronta — vedi finalizeAudio sotto. MemoryCard.tsx mostra già la
+// scritta "in elaborazione…" per status "processing".
+const PLACEHOLDER_CONTENT = "Trascrizione in corso…";
 
 export async function POST(req: NextRequest) {
   const supabase = createClient();
@@ -112,20 +127,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Trascrizione via Whisper
-  const transcription = await openai.audio.transcriptions.create({
-    file: new File([buffer], "recording.webm", { type: "audio/webm" }),
-    model: "whisper-1",
-    language: "it",
-  });
-
+  // 2026-09-22: la trascrizione Whisper (sotto, in finalizeAudio) può da
+  // sola superare il tetto della funzione se eseguita PRIMA di rispondere al
+  // client — stesso identico bug, e stessa soluzione, di
+  // /api/upload/meeting/route.ts: creiamo subito la memoria con un
+  // segnaposto e rispondiamo, la trascrizione prosegue dopo in background.
   const { data: memory, error } = await supabase
     .from("memories")
     .insert({
       user_id: user.id,
       type: "audio",
       status: "processing",
-      content: transcription.text,
+      content: PLACEHOLDER_CONTENT,
       media_path: path,
       media_size: buffer.length,
       media_duration: duration,
@@ -137,11 +150,50 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // waitUntil(): senza, la funzione serverless termina appena risposto e la
-  // Promise di processMemory() viene uccisa a metà — è la causa esatta delle
-  // memorie rimaste bloccate per sempre su status "processing" (vedi
-  // commento 2026-09-17 in src/app/api/memories/route.ts, dove il problema
-  // era già stato segnalato come TODO ma mai risolto).
-  waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory failed", err)));
+  // Promise di finalizeAudio()/processMemory() viene uccisa a metà — è la
+  // causa esatta delle memorie rimaste bloccate per sempre su status
+  // "processing" (vedi commento 2026-09-17 in src/app/api/memories/route.ts,
+  // dove il problema era già stato segnalato come TODO ma mai risolto).
+  waitUntil(
+    finalizeAudio(memory.id, buffer)
+      .then(() => processMemory(memory.id))
+      .catch((err) => console.error("finalizeAudio failed", err))
+  );
 
   return NextResponse.json(memory, { status: 201 });
+}
+
+// Trascrizione Whisper per una nota vocale già salvata come memoria
+// segnaposto (vedi POST sopra). Gira dentro waitUntil(), quindi DOPO che la
+// risposta HTTP è già stata inviata al client: usiamo createServiceClient()
+// invece del client legato ai cookie della richiesta — stesso motivo
+// spiegato in /api/upload/meeting/route.ts (finalizeMeeting) e in
+// processMemory() (classification.ts).
+async function finalizeAudio(memoryId: string, buffer: Buffer) {
+  const supabase = createServiceClient();
+
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: new File([buffer], "recording.webm", { type: "audio/webm" }),
+      model: "whisper-1",
+      language: "it",
+    });
+
+    await supabase.from("memories").update({ content: transcription.text }).eq("id", memoryId);
+  } catch (err) {
+    // La memoria non deve restare bloccata per sempre su "in elaborazione"
+    // con il testo segnaposto se Whisper fallisce. Il file audio resta
+    // comunque ascoltabile: non lo rimuoviamo.
+    console.error("finalizeAudio: trascrizione fallita", err);
+    await supabase
+      .from("memories")
+      .update({
+        status: "error",
+        error_message: err instanceof Error ? err.message : "unknown_error",
+        content:
+          "Registrazione salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
+      })
+      .eq("id", memoryId);
+    throw err;
+  }
 }
