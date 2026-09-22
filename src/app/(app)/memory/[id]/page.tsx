@@ -33,7 +33,16 @@ function parseTopics(raw: string): string[] {
 export default function MemoryDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data: memory, isLoading, mutate } = useSWR(`/api/memories/${id}`, fetcher);
+  // 2026-09-22: audio/riunioni ora rispondono con la memoria ancora in
+  // status "processing" (trascrizione/riassunto girano in background dopo
+  // la risposta, vedi /api/upload/meeting e /api/upload/audio) — senza
+  // questo polling, chi apre il dettaglio subito dopo aver registrato resta
+  // bloccato a guardare il segnaposto "Trascrizione in corso…" finché non
+  // ricarica manualmente la pagina. Il polling si ferma da solo appena lo
+  // status non è più "processing".
+  const { data: memory, isLoading, mutate } = useSWR(`/api/memories/${id}`, fetcher, {
+    refreshInterval: (data) => (data?.status === "processing" ? 4000 : 0),
+  });
 
   async function handleDelete() {
     if (!confirm("Eliminare questo ricordo?")) return;
