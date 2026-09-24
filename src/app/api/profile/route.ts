@@ -20,7 +20,7 @@ export async function GET() {
   const { data: profile, error } = await supabase
     .from("profiles")
     .select(
-      "dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy, weekly_reminders, daily_capture_reminder_enabled"
+      "dietary_preferences, interests, monthly_budget, onboarding_completed, tracks_cycle, tracks_pregnancy, weekly_reminders, daily_capture_reminder_enabled, morning_briefing_enabled, telegram_chat_id"
     )
     .eq("id", user.id)
     .single();
@@ -54,6 +54,15 @@ export async function GET() {
     // Impostazioni → Notifiche, stesso principio di tracks_cycle.
     // tracks_pregnancy sopra. Vedi /api/cron/daily-capture-reminder.
     daily_capture_reminder_enabled: profile?.daily_capture_reminder_enabled ?? false,
+    // Briefing mattutino composto (appuntamenti + scadenze + resurfacing,
+    // migration 037) — stesso principio di daily_capture_reminder_enabled
+    // sopra: mai attivo di default. Vedi /api/cron/morning-briefing.
+    morning_briefing_enabled: profile?.morning_briefing_enabled ?? false,
+    // Collegamento Telegram (migration 038) — non esponiamo il chat_id in
+    // sé (non serve al client, e non è comunque un dato sensibile ma non
+    // c'è motivo di girarlo), solo se una chat risulta collegata. Vedi
+    // /api/telegram/link, /unlink e /webhook.
+    telegram_connected: !!profile?.telegram_chat_id,
   });
 }
 
@@ -68,7 +77,7 @@ export async function PATCH(req: NextRequest) {
   const update: Record<string, unknown> = {};
 
   // Validiamo contro il set chiuso di opzioni: valori sconosciuti vengono
-  // scartati silenziosamente invece di rifiutare la richiesta, così il
+  // scartati silenziosamente invece che rifiutare la richiesta, così il
   // client può inviare l'intero array selezionato senza dover conoscere la
   // lista valida lato server.
   if (Array.isArray(body.dietary_preferences)) {
@@ -116,6 +125,11 @@ export async function PATCH(req: NextRequest) {
   // mai automatico, sempre una scelta esplicita.
   if (typeof body.daily_capture_reminder_enabled === "boolean") {
     update.daily_capture_reminder_enabled = body.daily_capture_reminder_enabled;
+  }
+  // Briefing mattutino (migration 037), attivato da Impostazioni →
+  // Notifiche — stesso principio di daily_capture_reminder_enabled sopra.
+  if (typeof body.morning_briefing_enabled === "boolean") {
+    update.morning_briefing_enabled = body.morning_briefing_enabled;
   }
   // Budget mensile per la sezione Spese (migrazione 022) — null per
   // rimuoverlo (nessun limite impostato), un numero positivo per impostarlo.
