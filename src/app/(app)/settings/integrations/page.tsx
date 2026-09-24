@@ -34,6 +34,45 @@ function IntegrationsContent() {
   const [googleBanner, setGoogleBanner] = useState<"connected" | "error" | null>(null);
   const [microsoftBanner, setMicrosoftBanner] = useState<"connected" | "error" | null>(null);
 
+  // Collegamento Telegram (migration 038) — a differenza di Google/
+  // Microsoft, non c'è un OAuth redirect: generiamo un codice monouso che
+  // l'utente manda al bot con "/start <codice>" (vedi /api/telegram/link e
+  // /api/telegram/webhook), quindi lo stato "connesso" arriva da
+  // /api/profile invece che da una route di status dedicata.
+  const [telegramConnected, setTelegramConnected] = useState<boolean | null>(null);
+  const [telegramCode, setTelegramCode] = useState<{ code: string; deep_link: string | null } | null>(null);
+  const [telegramGenerating, setTelegramGenerating] = useState(false);
+  const [telegramDisconnecting, setTelegramDisconnecting] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then((r) => r.json())
+      .then((data) => setTelegramConnected(!!data.telegram_connected))
+      .catch(() => {});
+  }, []);
+
+  async function generateTelegramCode() {
+    setTelegramGenerating(true);
+    try {
+      const res = await fetch("/api/telegram/link", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) setTelegramCode({ code: data.code, deep_link: data.deep_link });
+    } finally {
+      setTelegramGenerating(false);
+    }
+  }
+
+  async function disconnectTelegram() {
+    setTelegramDisconnecting(true);
+    try {
+      await fetch("/api/telegram/unlink", { method: "POST" });
+      setTelegramConnected(false);
+      setTelegramCode(null);
+    } finally {
+      setTelegramDisconnecting(false);
+    }
+  }
+
   useEffect(() => {
     const google = searchParams.get("google");
     if (google === "connected" || google === "error") {
@@ -178,6 +217,56 @@ function IntegrationsContent() {
           Leggiamo solo le email in arrivo per riconoscere impegni con data e ora — non
           modifichiamo né cancelliamo nulla nella tua casella. Puoi scollegare in qualsiasi
           momento.
+        </p>
+      </div>
+
+      <div className="card-light space-y-3">
+        <div>
+          <p className="font-medium">Telegram</p>
+          <p className="text-sm text-celeste-muted mt-1">
+            Manda un messaggio o una nota vocale al bot ImRecall e la salviamo qui, esattamente
+            come se l&apos;avessi registrata nell&apos;app — utile quando non vuoi aprire l&apos;app.
+          </p>
+        </div>
+
+        {telegramConnected === null && <p className="text-sm text-celeste-muted">Verifica collegamento…</p>}
+
+        {telegramConnected === true && (
+          <>
+            <p className="text-sm text-celeste-muted">Chat Telegram collegata.</p>
+            <button
+              onClick={disconnectTelegram}
+              disabled={telegramDisconnecting}
+              className="btn-ghost-light w-full"
+            >
+              {telegramDisconnecting ? "Scollegamento…" : "Scollega Telegram"}
+            </button>
+          </>
+        )}
+
+        {telegramConnected === false && !telegramCode && (
+          <button onClick={generateTelegramCode} disabled={telegramGenerating} className="btn-primary-light w-full">
+            {telegramGenerating ? "Genero il codice…" : "Connetti Telegram"}
+          </button>
+        )}
+
+        {telegramConnected === false && telegramCode && (
+          <div className="space-y-2">
+            <p className="text-sm text-celeste-muted">
+              Apri la chat con il bot e manda:{" "}
+              <span className="font-mono text-celeste-navy">/start {telegramCode.code}</span>
+            </p>
+            {telegramCode.deep_link && (
+              <a href={telegramCode.deep_link} target="_blank" rel="noreferrer" className="btn-primary-light w-full block text-center">
+                Apri Telegram
+              </a>
+            )}
+            <p className="text-xs text-celeste-muted">Il codice scade tra 10 minuti.</p>
+          </div>
+        )}
+
+        <p className="text-xs text-celeste-muted">
+          Leggiamo solo i messaggi che mandi tu al bot. Puoi scollegare in qualsiasi momento.
         </p>
       </div>
     </div>
