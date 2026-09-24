@@ -30,6 +30,12 @@ export default function NotificationsSettingsPage() {
   const [dailyReminder, setDailyReminder] = useState(false);
   const [dailyReminderSaving, setDailyReminderSaving] = useState(false);
 
+  // Briefing mattutino composto (migration 037) — stesso principio del
+  // promemoria sopra, ma toggle indipendente: appuntamenti + scadenze +
+  // resurfacing invece di "hai catturato qualcosa oggi?".
+  const [morningBriefing, setMorningBriefing] = useState(false);
+  const [morningBriefingSaving, setMorningBriefingSaving] = useState(false);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setSupported(false);
@@ -46,7 +52,10 @@ export default function NotificationsSettingsPage() {
 
     fetch("/api/profile")
       .then((r) => r.json())
-      .then((data) => setDailyReminder(!!data.daily_capture_reminder_enabled))
+      .then((data) => {
+        setDailyReminder(!!data.daily_capture_reminder_enabled);
+        setMorningBriefing(!!data.morning_briefing_enabled);
+      })
       .catch(() => {});
   }, []);
 
@@ -121,6 +130,21 @@ export default function NotificationsSettingsPage() {
       });
     } finally {
       setDailyReminderSaving(false);
+    }
+  }
+
+  async function toggleMorningBriefing() {
+    const next = !morningBriefing;
+    setMorningBriefing(next);
+    setMorningBriefingSaving(true);
+    try {
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ morning_briefing_enabled: next }),
+      });
+    } finally {
+      setMorningBriefingSaving(false);
     }
   }
 
@@ -201,6 +225,41 @@ export default function NotificationsSettingsPage() {
             className="shrink-0"
           />
           Avvisami alle 9 se non ho ancora catturato nulla
+        </label>
+
+        {supported && !enabled && (
+          <p className="text-celeste-muted text-xs">
+            Attiva prima le notifiche push qui sopra.
+          </p>
+        )}
+      </div>
+
+      {/* Toggle indipendente dal promemoria "cattura qualcosa" sopra —
+          stesso principio, notifiche diverse per bisogni diversi: questa
+          riassume la giornata invece di ricordare di scrivere qualcosa.
+          Richiede comunque le notifiche push attive, stesso motivo. */}
+      <div className="card-light space-y-3">
+        <div>
+          <p className="font-medium">Briefing mattutino</p>
+          <p className="text-sm text-celeste-muted mt-1">
+            Un messaggio alle 7:30 con gli appuntamenti di oggi, le scadenze in arrivo e un
+            ricordo da riscoprire — tutto insieme, in un&apos;unica notifica.
+          </p>
+        </div>
+
+        <label
+          className={
+            "flex items-center gap-2 text-sm " + (supported && enabled ? "cursor-pointer" : "opacity-50")
+          }
+        >
+          <input
+            type="checkbox"
+            checked={morningBriefing}
+            onChange={toggleMorningBriefing}
+            disabled={!supported || !enabled || morningBriefingSaving}
+            className="shrink-0"
+          />
+          Avvisami alle 7:30 con il riassunto della giornata
         </label>
 
         {supported && !enabled && (
