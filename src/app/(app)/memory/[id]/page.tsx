@@ -108,7 +108,26 @@ export default function MemoryDetailPage() {
             <FileUp size={16} /> Apri file originale
           </a>
         )}
-        {!hasStructuredSummary && memory.content && (
+        {memory.status === "error" && (
+          // Prima di questo, un ricordo fallito (es. una riunione troppo
+          // lunga per il tempo massimo di elaborazione, vedi DEADLINE_MS in
+          // /api/upload/meeting e /api/upload/audio) restava con `content`
+          // fermo al segnaposto "Trascrizione e riassunto in corso…" per
+          // sempre: lo status "error" veniva salvato nel database (insieme a
+          // error_message) ma questa pagina lo ignorava del tutto e
+          // continuava a mostrare il segnaposto come se l'elaborazione
+          // fosse ancora in corso — sembrava bloccata all'infinito invece di
+          // dire chiaramente che aveva fallito. Segnalato dall'utente
+          // (screenshot "Riunione del 22/09/2026" ferma dal 22) il
+          // 2026-09-25.
+          <div className="rounded-xl bg-urgent/10 px-3 py-2.5 text-sm text-urgent">
+            {memory.error_message && memory.error_message !== "processing_timeout"
+              ? memory.error_message
+              : "L'elaborazione di questo ricordo non è andata a buon fine (es. registrazione troppo lunga o problema temporaneo). Il file originale resta comunque salvato e ascoltabile/apribile qui sopra."}
+          </div>
+        )}
+
+        {!hasStructuredSummary && memory.content && memory.status !== "error" && (
           // Note vocali brevi (type "audio") e riunioni "legacy"/senza
           // trascrizione utile finiscono sempre qui (vedi hasStructuredSummary
           // sopra): senza questo bottone la loro trascrizione non aveva alcun
