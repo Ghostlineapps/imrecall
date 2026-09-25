@@ -2,6 +2,13 @@ import OpenAI from "openai";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "./embeddings";
 import { geocodePlace, reverseGeocodeBestName } from "@/lib/utils/geocoding";
+import { findNearestPlace } from "@/lib/utils/nearestPlace";
+
+// Stessa soglia/principio di resolvePlaceName.ts ("Spostamenti"): entro
+// questa distanza da un luogo che l'utente ha già (salvato esplicitamente
+// in Impostazioni → Luoghi, o creato da una cattura precedente), un nuovo
+// scatto GPS "è" quel luogo, non un posto a sé.
+const SAVED_PLACE_RADIUS_METERS = 150;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -209,9 +216,13 @@ async function geocodeAndLinkPlace(
  * l'app registra dove; mesi dopo, tornando lì vicino, nearby_memories()
  * (vedi migrazione 012) può risalire a quella foto e riproporla.
  *
- * Dedup per normalized_name come in geocodeAndLinkPlace: se il reverse
- * geocoding restituisce lo stesso indirizzo breve di un luogo già salvato,
- * riusa quella riga invece di crearne una nuova identica.
+ * Riusa un luogo esistente in due modi, in ordine: primo, se le coordinate
+ * cadono entro SAVED_PLACE_RADIUS_METERS da un luogo già presente (salvato
+ * dall'utente o creato in precedenza) — così "Casa" viene riconosciuta
+ * anche da scatti GPS, non solo da "Spostamenti"/resolvePlaceName.ts;
+ * altrimenti, dedup per normalized_name come in geocodeAndLinkPlace, se il
+ * reverse geocoding restituisce lo stesso indirizzo breve di un luogo già
+ * salvato.
  */
 export async function geocodeAndLinkPlaceByCoords(
   supabase: ReturnType<typeof createServiceClient>,
@@ -220,37 +231,61 @@ export async function geocodeAndLinkPlaceByCoords(
   latitude: number,
   longitude: number
 ) {
-  // reverseGeocodeBestName invece del solo reverseGeocode: preferisce il
-  // nome del locale/monumento quando le coordinate corrispondono a un punto
-  // d'interesse riconoscibile (vedi il commento su reverseGeocodeBestName
-  // in lib/utils/geocoding.ts — fix 2026-09-06).
-  const placeName = await reverseGeocodeBestName(latitude, longitude);
-  if (!placeName) return;
-
-  const normalized = placeName.toLowerCase().trim();
-
-  let { data: place } = await supabase
+  // Prima controlliamo se il punto cade vicino a un luogo che l'utente ha
+  // già, salvato esplicitamente ("Casa", "Lavoro"...) o creato da una
+  // cattura precedente: senza questo controllo, ogni foto/nota scattata a
+  // casa creava un places con normalized_name preso dall'indirizzo grezzo
+  // ("Strada Provinciale..."), un record DIVERSO dalla "Casa" salvata
+  // dall'utente (dedup lì è solo per stringa esatta) — quindi il
+  // resurfacing di prossimità continuava a dire "sei tornato in Strada
+  // Provinciale..." invece di riconoscere "Casa", e places.excluded_from_
+  // resurfacing (migrazione 032) non aveva alcun effetto su questi
+  // duplicati. Segnalato dall'utente il 2026-09-24. Stessa
+  // logica/soglia di resolvePlaceName.ts, usata per "Spostamenti".
+  const { data: existingPlaces } = await supabase
     .from("places")
     .select("*")
     .eq("user_id", userId)
-    .eq("normalized_name", normalized)
-    .single();
+    .not("latitude", "is", null)
+    .not("longitude", "is", null);
+
+  let place = findNearestPlace(existingPlaces ?? [], latitude, longitude, SAVED_PLACE_RADIUS_METERS);
 
   if (!place) {
-    const { data: newPlace } = await supabase
+    // reverseGeocodeBestName invece del solo reverseGeocode: preferisce il
+    // nome del locale/monumento quando le coordinate corrispondono a un
+    // punto d'interesse riconoscibile (vedi il commento su
+    // reverseGeocodeBestName in lib/utils/geocoding.ts — fix 2026-09-06).
+    const placeName = await reverseGeocodeBestName(latitude, longitude);
+    if (!placeName) return;
+
+    const normalized = placeName.toLowerCase().trim();
+
+    const { data: existingByName } = await supabase
       .from("places")
-      .insert({
-        user_id: userId,
-        name: placeName,
-        normalized_name: normalized,
-        latitude,
-        longitude,
-        granularity: "poi", // coordinate dirette dal dispositivo, non un nome geocodificato
-        geocoded_at: new Date().toISOString(),
-      })
-      .select()
+      .select("*")
+      .eq("user_id", userId)
+      .eq("normalized_name", normalized)
       .single();
-    place = newPlace;
+
+    place = existingByName;
+
+    if (!place) {
+      const { data: newPlace } = await supabase
+        .from("places")
+        .insert({
+          user_id: userId,
+          name: placeName,
+          normalized_name: normalized,
+          latitude,
+          longitude,
+          granularity: "poi", // coordinate dirette dal dispositivo, non un nome geocodificato
+          geocoded_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      place = newPlace;
+    }
   }
 
   if (place) {
