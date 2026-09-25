@@ -45,6 +45,14 @@ export function MemoryCard({ memory, light = false }: { memory: any; light?: boo
           {memory.status === "processing" && (
             <span className="text-xs text-warn">in elaborazione…</span>
           )}
+          {/* Prima non c'era alcun indicatore per status "error": la card
+             mostrava lo stesso testo segnaposto ("Trascrizione e riassunto
+             in corso…") di un ricordo ancora in elaborazione, indistinguibile
+             da uno che ha fallito per sempre — vedi lo stesso fix nel
+             dettaglio del ricordo, app/(app)/memory/[id]/page.tsx. */}
+          {memory.status === "error" && (
+            <span className="text-xs text-urgent">non riuscito</span>
+          )}
           {memory.categories?.[0] && (
             <span
               className={clsx(
