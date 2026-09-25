@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { detectAppointmentsFromText } from "@/lib/openai/telegramAppointments";
 import { waitUntil } from "@vercel/functions";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded, limitsEnabled } from "@/lib/subscription/limits";
@@ -169,7 +170,95 @@ async function handleText(supabase: ServiceClient, userId: string, chatId: numbe
   // viene uccisa a metà.
   waitUntil(processMemory(memory.id).catch((err) => console.error("processMemory (Telegram testo) fallita", err)));
 
+  // Oltre al ricordo generico salvato sopra, controlliamo se il testo
+  // descrive uno o più impegni con data/ora precisa (es. l'agenda di una
+  // giornata elencata in un solo messaggio) — senza questo, un messaggio
+  // come "14:30 meeting con David... 16:00 meeting con David di Linkfar"
+  // restava SOLO un ricordo testuale e non finiva mai nel Calendario
+  // (Appuntamenti), a differenza di screenshot/documenti/email che hanno
+  // già questo riconoscimento (vedi detectAppointmentFromEmail). Segnalato
+  // dall'utente il 2026-09-25. Gira in background via waitUntil, separato
+  // dal salvataggio del ricordo: non deve bloccare né far fallire "Salvato
+  // su ImRecall.".
+  waitUntil(
+    detectAndSaveTelegramAppointments(supabase, userId, memory.id, chatId, text).catch((err) =>
+      console.error("Rilevamento appuntamenti da Telegram fallito", err)
+    )
+  );
+
   await sendTelegramMessage(chatId, "Salvato su ImRecall.");
+}
+
+async function detectAndSaveTelegramAppointments(
+  supabase: ServiceClient,
+  userId: string,
+  memoryId: string,
+  chatId: number,
+  text: string
+) {
+  const detected = await detectAppointmentsFromText(text);
+  if (detected.length === 0) return;
+
+  const createdTitles: string[] = [];
+
+  for (const appt of detected) {
+    const { error } = await supabase.from("appointments").insert({
+      user_id: userId,
+      memory_id: memoryId,
+      title: appt.title,
+      appointment_at: romeLocalToUtcIso(appt.appointment_at),
+      location: appt.location,
+      source: "telegram",
+    });
+
+    if (!error) createdTitles.push(appt.title);
+  }
+
+  if (createdTitles.length === 0) return;
+
+  const label = createdTitles.length === 1 ? "un appuntamento" : `${createdTitles.length} appuntamenti`;
+  const list = createdTitles.map((title) => `• ${title}`).join("\n");
+  await sendTelegramMessage(chatId, `Ho aggiunto anche ${label} al Calendario:\n${list}`);
+}
+
+// Stessa logica duplicata già usata in /api/upload/image, /api/upload/
+// document, /api/upload/meeting e /api/cron/gmail-sync (vedi il commento su
+// finalizeTelegramVoice più sotto per il principio generale di duplicazione
+// invece di un import condiviso tra route Next.js separate).
+function romeLocalToUtcIso(localDateTime: string): string {
+  const [datePart, timePart] = localDateTime.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = (timePart ?? "09:00").split(":").map(Number);
+
+  const guessUtcMs = Date.UTC(year, month - 1, day, hour, minute);
+  const offsetMinutes = romeOffsetMinutesAt(guessUtcMs);
+  return new Date(guessUtcMs - offsetMinutes * 60000).toISOString();
+}
+
+function romeOffsetMinutesAt(utcMs: number): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Rome",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(new Date(utcMs)).reduce((acc: Record<string, string>, p) => {
+    if (p.type !== "literal") acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const romeAsUtcMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) === 24 ? 0 : Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return (romeAsUtcMs - utcMs) / 60000;
 }
 
 async function handleVoice(
@@ -292,7 +381,7 @@ async function finalizeTelegramVoice(memoryId: string, buffer: Buffer) {
         error_message: timedOut ? "processing_timeout" : err instanceof Error ? err.message : "unknown_error",
         content: timedOut
           ? "Nota vocale salvata, ma è troppo lunga per essere trascritta entro i limiti della piattaforma. Il file resta comunque ascoltabile dal dettaglio del ricordo."
-          : "Nota vocale salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
+          : "Nota vocale salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo."
       })
       .eq("id", memoryId);
   } finally {
