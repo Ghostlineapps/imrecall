@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Trash2, FileUp } from "lucide-react";
+import { ArrowLeft, Trash2, FileUp, RotateCw } from "lucide-react";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { RelatedMemories } from "@/components/memory/RelatedMemories";
@@ -43,11 +44,30 @@ export default function MemoryDetailPage() {
   const { data: memory, isLoading, mutate } = useSWR(`/api/memories/${id}`, fetcher, {
     refreshInterval: (data) => (data?.status === "processing" ? 4000 : 0),
   });
+  const [retrying, setRetrying] = useState(false);
 
   async function handleDelete() {
     if (!confirm("Eliminare questo ricordo?")) return;
     await fetch(`/api/memories/${id}`, { method: "DELETE" });
     router.push("/timeline");
+  }
+
+  // 2026-09-26: prima l'unica via per rimettere in moto una registrazione
+  // fallita (status "error", vedi blocco sotto) era intervenire a mano sul
+  // database — l'audio non viene mai perso (resta su Storage, vedi
+  // media_path in /api/upload/meeting e /api/upload/audio) ma non c'era
+  // alcun modo, per l'utente, di richiedere un nuovo tentativo di
+  // trascrizione/riassunto. Questo pulsante richiama la stessa pipeline via
+  // /api/memories/[id]/retry, poi si affida al polling già esistente sopra
+  // (refreshInterval) per mostrare l'esito.
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      await fetch(`/api/memories/${id}/retry`, { method: "POST" });
+      await mutate();
+    } finally {
+      setRetrying(false);
+    }
   }
 
   if (isLoading || !memory) {
@@ -120,10 +140,26 @@ export default function MemoryDetailPage() {
           // dire chiaramente che aveva fallito. Segnalato dall'utente
           // (screenshot "Riunione del 22/09/2026" ferma dal 22) il
           // 2026-09-25.
-          <div className="rounded-xl bg-urgent/10 px-3 py-2.5 text-sm text-urgent">
-            {memory.error_message && memory.error_message !== "processing_timeout"
-              ? memory.error_message
-              : "L'elaborazione di questo ricordo non è andata a buon fine (es. registrazione troppo lunga o problema temporaneo). Il file originale resta comunque salvato e ascoltabile/apribile qui sopra."}
+          <div className="rounded-xl bg-urgent/10 px-3 py-2.5 space-y-2">
+            <p className="text-sm text-urgent">
+              {memory.error_message && memory.error_message !== "processing_timeout"
+                ? memory.error_message
+                : "L'elaborazione di questo ricordo non è andata a buon fine (es. registrazione troppo lunga o problema temporaneo). Il file originale resta comunque salvato e ascoltabile/apribile qui sopra."}
+            </p>
+            {/* Riprova disponibile solo per audio/riunioni: sono gli unici
+               tipi con una trascrizione in background da poter rilanciare
+               (vedi handleRetry sopra) — un ricordo di altro tipo in errore
+               non ha nulla da "riprovare" in questo senso. */}
+            {(memory.type === "meeting" || memory.type === "audio") && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="flex items-center gap-1.5 text-sm font-medium text-urgent disabled:opacity-50"
+              >
+                <RotateCw size={14} className={retrying ? "animate-spin" : ""} />
+                {retrying ? "Nuovo tentativo in corso…" : "Riprova"}
+              </button>
+            )}
           </div>
         )}
 
