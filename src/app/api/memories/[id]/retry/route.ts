@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
-import { finalizeMeeting } from "@/app/api/upload/meeting/route";
-import { finalizeAudio } from "@/app/api/upload/audio/route";
+import { finalizeMeeting } from "@/lib/openai/finalizeMeeting";
+import { finalizeAudio } from "@/lib/openai/finalizeAudio";
 
 // Stesso tetto delle route di upload originali (vedi i commenti lì): senza
 // questo, waitUntil() sotto verrebbe ucciso dal tetto di default della
@@ -21,8 +21,12 @@ export const maxDuration = 300;
 // stati ritentati.
 //
 // Riusa la stessa pipeline delle route di upload (finalizeMeeting /
-// finalizeAudio, ora esportate da lì) invece di duplicarla: qui ripartiamo
-// dal file già su Storage, senza richiedere un nuovo upload dal client.
+// finalizeAudio, spostate in src/lib/openai/ perché Next.js non permette
+// export extra da un file route.ts dell'App Router — la prima versione di
+// questa route importava direttamente dalle route di upload e ha rotto il
+// build in produzione, vedi i commenti in finalizeMeeting.ts/finalizeAudio.ts)
+// invece di duplicarla: qui ripartiamo dal file già su Storage, senza
+// richiedere un nuovo upload dal client.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
