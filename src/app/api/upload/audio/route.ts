@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { finalizeAudio } from "@/lib/openai/finalizeAudio";
 import { waitUntil } from "@vercel/functions";
 import {
   FREE_MEMORIES_PER_MONTH,
@@ -11,23 +11,21 @@ import {
   transcriptionMinutesUsedThisMonth,
 } from "@/lib/subscription/limits";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 // Limite durata per tier: 30 min Free, 50 min Premium.
 // 2026-09-22: abbassato da 100 a 50 min dopo che una riunione di soli ~20
 // min è rimasta bloccata per sempre su "in elaborazione" (vedi finalizeAudio
-// sotto e lo stesso fix, più esteso, in /api/upload/meeting/route.ts): con
-// maxDuration=60 il lavoro in background (Whisper) veniva ucciso a metà.
-// Ora maxDuration è a 300s (il vero tetto del piano Hobby con Fluid Compute
-// — verificato nelle impostazioni Vercel del progetto, non più 60s) e
-// finalizeAudio aborta esplicitamente la chiamata Whisper con un margine di
-// sicurezza (DEADLINE_MS) scrivendo un errore chiaro invece di restare
-// bloccata per sempre. 50 min è la soglia che riteniamo ragionevolmente
-// raggiungibile entro quel budget; senza dati reali sul throughput di
-// Whisper per file molto lunghi non possiamo garantirlo con certezza oltre
-// questo — per una garanzia solida andrebbe o alzato il piano Vercel a Pro
-// (maxDuration fino a 1800s) o implementata la segmentazione audio lato
-// client (non ancora fatta).
+// in src/lib/openai/finalizeAudio.ts e lo stesso fix, più esteso, in
+// /api/upload/meeting/route.ts): con maxDuration=60 il lavoro in background
+// (Whisper) veniva ucciso a metà. Ora maxDuration è a 300s (il vero tetto
+// del piano Hobby con Fluid Compute — verificato nelle impostazioni Vercel
+// del progetto, non più 60s) e finalizeAudio aborta esplicitamente la
+// chiamata Whisper con un margine di sicurezza (DEADLINE_MS) scrivendo un
+// errore chiaro invece di restare bloccata per sempre. 50 min è la soglia
+// che riteniamo ragionevolmente raggiungibile entro quel budget; senza dati
+// reali sul throughput di Whisper per file molto lunghi non possiamo
+// garantirlo con certezza oltre questo — per una garanzia solida andrebbe o
+// alzato il piano Vercel a Pro (maxDuration fino a 1800s) o implementata la
+// segmentazione audio lato client (non ancora fatta).
 const MAX_SECONDS_FREE = 1800; // 30 min
 const MAX_SECONDS_PREMIUM = 3000; // 50 min
 
@@ -53,16 +51,16 @@ const MAX_FILE_BYTES = 24 * 1024 * 1024;
 // impostazioni Vercel del progetto (Settings → Functions) che il vero tetto
 // del piano Hobby con Fluid Compute abilitato è oggi 300s, non 60s — 60 era
 // un valore scelto per prudenza, non il limite reale della piattaforma.
-// La trascrizione gira in background (finalizeAudio, sotto) via waitUntil()
+// La trascrizione gira in background (finalizeAudio.ts) via waitUntil()
 // dopo aver già risposto al client, quindi questo tetto governa solo il
-// budget del lavoro in background — vedi anche DEADLINE_MS lì sotto, che
-// aborta esplicitamente prima di arrivare a questo limite invece di lasciare
-// che Vercel uccida la funzione senza preavviso.
+// budget del lavoro in background — vedi anche DEADLINE_MS lì, che aborta
+// esplicitamente prima di arrivare a questo limite invece di lasciare che
+// Vercel uccida la funzione senza preavviso.
 export const maxDuration = 300;
 
 // Testo segnaposto salvato subito alla creazione, prima che la trascrizione
-// sia pronta — vedi finalizeAudio sotto. MemoryCard.tsx mostra già la
-// scritta "in elaborazione…" per status "processing".
+// sia pronta — vedi finalizeAudio.ts. MemoryCard.tsx mostra già la scritta
+// "in elaborazione…" per status "processing".
 const PLACEHOLDER_CONTENT = "Trascrizione in corso…";
 
 export async function POST(req: NextRequest) {
@@ -147,8 +145,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2026-09-22: la trascrizione Whisper (sotto, in finalizeAudio) può da
-  // sola superare il tetto della funzione se eseguita PRIMA di rispondere al
+  // 2026-09-22: la trascrizione Whisper (finalizeAudio.ts) può da sola
+  // superare il tetto della funzione se eseguita PRIMA di rispondere al
   // client — stesso identico bug, e stessa soluzione, di
   // /api/upload/meeting/route.ts: creiamo subito la memoria con un
   // segnaposto e rispondiamo, la trascrizione prosegue dopo in background.
@@ -181,73 +179,4 @@ export async function POST(req: NextRequest) {
   );
 
   return NextResponse.json(memory, { status: 201 });
-}
-
-// Copia esplicita in un ArrayBuffer "piatto": il tipo di Buffer.buffer è
-// ArrayBufferLike (può includere SharedArrayBuffer), che il DOM lib non
-// accetta come BlobPart per File/Blob — vedi lo stesso helper in
-// /api/upload/meeting/route.ts.
-function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
-  const arrayBuffer = new ArrayBuffer(buffer.byteLength);
-  new Uint8Array(arrayBuffer).set(buffer);
-  return arrayBuffer;
-}
-
-// Trascrizione Whisper per una nota vocale già salvata come memoria
-// segnaposto (vedi POST sopra). Gira dentro waitUntil(), quindi DOPO che la
-// risposta HTTP è già stata inviata al client: usiamo createServiceClient()
-// invece del client legato ai cookie della richiesta — stesso motivo
-// spiegato in /api/upload/meeting/route.ts (finalizeMeeting) e in
-// processMemory() (classification.ts).
-// Margine di sicurezza sotto maxDuration (300s, sopra): abortiamo NOI la
-// chiamata Whisper prima che sia Vercel a uccidere l'intera funzione. Senza
-// questo, un file troppo lungo per completare in tempo lasciava la memoria
-// bloccata per sempre su "in elaborazione" (bug segnalato 2026-09-22) — con
-// l'abort esplicito otteniamo invece un errore chiaro e immediato (vedi
-// catch sotto), sempre, indipendentemente da quanto la registrazione superi
-// il budget disponibile.
-const DEADLINE_MS = 270_000;
-
-// Esportata (2026-09-26) per lo stesso motivo di finalizeMeeting in
-// /api/upload/meeting/route.ts: permette a /api/memories/[id]/retry/route.ts
-// di rielaborare una nota vocale finita in status "error" senza duplicare
-// qui la chiamata Whisper.
-export async function finalizeAudio(memoryId: string, buffer: Buffer) {
-  const supabase = createServiceClient();
-
-  const deadline = new AbortController();
-  const deadlineTimer = setTimeout(() => deadline.abort(), DEADLINE_MS);
-
-  try {
-    const transcription = await openai.audio.transcriptions.create(
-      {
-        file: new File([bufferToArrayBuffer(buffer)], "recording.webm", { type: "audio/webm" }),
-        model: "whisper-1",
-        language: "it",
-      },
-      { signal: deadline.signal }
-    );
-
-    await supabase.from("memories").update({ content: transcription.text }).eq("id", memoryId);
-  } catch (err) {
-    // La memoria non deve restare bloccata per sempre su "in elaborazione"
-    // con il testo segnaposto se Whisper fallisce (o se abbiamo dovuto
-    // abortire per il timeout, vedi DEADLINE_MS sopra). Il file audio resta
-    // comunque ascoltabile: non lo rimuoviamo.
-    const timedOut = deadline.signal.aborted;
-    console.error("finalizeAudio: trascrizione fallita", timedOut ? "(timeout)" : "", err);
-    await supabase
-      .from("memories")
-      .update({
-        status: "error",
-        error_message: timedOut ? "processing_timeout" : err instanceof Error ? err.message : "unknown_error",
-        content: timedOut
-          ? "Registrazione salvata, ma è troppo lunga per essere trascritta entro i limiti della piattaforma. Prova con una registrazione più breve. Il file resta comunque ascoltabile dal dettaglio del ricordo."
-          : "Registrazione salvata, ma la trascrizione è fallita. Il file resta comunque ascoltabile dal dettaglio del ricordo.",
-      })
-      .eq("id", memoryId);
-    throw err;
-  } finally {
-    clearTimeout(deadlineTimer);
-  }
 }
