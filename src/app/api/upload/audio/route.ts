@@ -208,7 +208,11 @@ function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
 // il budget disponibile.
 const DEADLINE_MS = 270_000;
 
-async function finalizeAudio(memoryId: string, buffer: Buffer) {
+// Esportata (2026-09-26) per lo stesso motivo di finalizeMeeting in
+// /api/upload/meeting/route.ts: permette a /api/memories/[id]/retry/route.ts
+// di rielaborare una nota vocale finita in status "error" senza duplicare
+// qui la chiamata Whisper.
+export async function finalizeAudio(memoryId: string, buffer: Buffer) {
   const supabase = createServiceClient();
 
   const deadline = new AbortController();
