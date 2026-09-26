@@ -388,7 +388,16 @@ function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
 // indipendentemente da quanto la registrazione superi il budget disponibile.
 const DEADLINE_MS = 270_000;
 
-async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: number) {
+// Esportata (2026-09-26) così /api/memories/[id]/retry/route.ts può
+// richiamare esattamente la stessa logica su una riunione già salvata e
+// finita in status "error" (es. per il vecchio tetto di 60s, poi alzato a
+// 300s lo stesso giorno in cui questa specifica registrazione ha fallito) —
+// senza retry, un fallimento restava bloccato per sempre finché non
+// interveniva uno sviluppatore. Deroga deliberata alla convenzione di
+// duplicare i piccoli helper per-route (vedi romeLocalToUtcIso sopra):
+// duplicare qui l'intera pipeline Whisper+GPT (190+ righe) sarebbe stato un
+// rischio di disallineamento futuro molto peggiore di un singolo import.
+export async function finalizeMeeting(memoryId: string, buffer: Buffer, duration: number) {
   const supabase = createServiceClient();
 
   const { data: memory } = await supabase.from("memories").select("user_id").eq("id", memoryId).single();
