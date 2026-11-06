@@ -16,7 +16,15 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Cap sul testo salvato in `content` — stesso principio di MAX_STORED_CHARS
 // in /api/upload/document, alzato perché le trascrizioni di riunioni sono
 // per natura più lunghe di un documento medio.
-const MAX_STORED_CHARS = 20000;
+//
+// 2026-11-06: alzato da 20.000 a 100.000 — segnalato dall'utente su una call
+// di ~43 minuti (circa 40.000 caratteri di trascrizione, non in italiano:
+// sia originale che traduzione finivano tagliate) il cui testo salvato
+// risultava con "[trascrizione troncata]" pur essendo la riunione finita
+// correttamente (status "ready", non un errore di elaborazione). 100.000
+// caratteri coprono comfortably riunioni di diverse ore senza avvicinarsi al
+// budget di output di GPT (max_tokens sotto) per call di durata normale.
+const MAX_STORED_CHARS = 100000;
 
 // Stessa conversione fuso orario duplicata in /api/upload/image e
 // /api/upload/document — vedi commenti lì per il perché della duplicazione
@@ -82,6 +90,20 @@ MAPPA:
 diventare una mappa mentale visiva: usa testo breve, senza parentesi,
 virgolette o due punti nel testo di ogni punto; ometti i sotto-punti se non
 ce ne sono per un argomento)
+
+PUNTI_RICHIESTE_IT:
+- ogni punto saliente emerso (decisione, numero/cifra importante, fatto rilevante) ed
+  ogni richiesta o azione esplicita fatta da una delle parti (es. "Mario chiede l'invio
+  del contratto entro venerdì"), una per riga, in italiano
+(sempre presente, anche se la riunione era già in italiano — a differenza della
+traduzione integrale sotto, che invece si omette in quel caso)
+
+PUNTI_RICHIESTE_EN:
+- the same list of key points and requests/action items as PUNTI_RICHIESTE_IT above,
+  translated into English, one per line
+(sempre presente, anche se la riunione era in italiano: qui lo scopo non è la
+traduzione dell'intera call ma un riepilogo rapido in inglese da poter
+condividere con interlocutori non italofoni)
 
 Se dalla riunione emerge una scadenza chiara (pagamento, consegna, documento con validità...), aggiungi in fondo:
 DEADLINE_DETECTED: {"title": "...", "due_date": "YYYY-MM-DD", "category": "bollo|assicurazione|fiscale|abbonamento|documento|altro"}
@@ -241,7 +263,11 @@ export async function finalizeMeeting(memoryId: string, buffer: Buffer, duration
       content =
         "Registrazione salvata, ma la trascrizione è risultata vuota (audio troppo silenzioso o non udibile). Il file resta comunque ascoltabile dal dettaglio del ricordo.";
     } else {
-      const excerpt = fullTranscript.slice(0, 20000);
+      // Stesso tetto di MAX_STORED_CHARS: prima era un 20.000 fisso e più
+      // basso, quindi per riunioni lunghe GPT vedeva (e quindi traduceva/
+      // riassumeva) solo una parte della trascrizione anche quando il testo
+      // integrale sarebbe poi stato salvato per intero — vedi commento sopra.
+      const excerpt = fullTranscript.slice(0, MAX_STORED_CHARS);
       const completion = await openai.chat.completions.create(
         {
           model: "gpt-4o-mini",
@@ -268,7 +294,20 @@ export async function finalizeMeeting(memoryId: string, buffer: Buffer, duration
         /TEMI:\s*([\s\S]*?)(?=\nMAPPA:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|$)/
       );
       const mapMatch = rawText.match(
-        /MAPPA:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
+        /MAPPA:\s*([\s\S]*?)(?=\nPUNTI_RICHIESTE_IT:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
+      );
+      // 2026-11-06: riepilogo bilingue di punti salienti e richieste/azioni
+      // emerse — richiesto dall'utente in aggiunta al RIASSUNTO (che resta
+      // solo in italiano, discorsivo) per poter condividere rapidamente con
+      // interlocutori non italofoni cosa è stato deciso/chiesto, senza dover
+      // leggere l'intera trascrizione tradotta. A differenza di
+      // TRASCRIZIONE_TRADOTTA, queste due sezioni sono SEMPRE presenti,
+      // anche per riunioni già in italiano (vedi prompt sopra).
+      const keyPointsItMatch = rawText.match(
+        /PUNTI_RICHIESTE_IT:\s*([\s\S]*?)(?=\nPUNTI_RICHIESTE_EN:|\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
+      );
+      const keyPointsEnMatch = rawText.match(
+        /PUNTI_RICHIESTE_EN:\s*([\s\S]*?)(?=\nDEADLINE_DETECTED:|\nAPPOINTMENT_DETECTED:|\nTRASCRIZIONE_TRADOTTA:|$)/
       );
       // Presente solo se la riunione non era già in italiano (vedi prompt) —
       // sempre l'ultima sezione della risposta, cattura tutto fino alla fine.
@@ -277,6 +316,8 @@ export async function finalizeMeeting(memoryId: string, buffer: Buffer, duration
       if (titleMatch?.[1]?.trim()) title = titleMatch[1].trim();
       const summary = summaryMatch?.[1]?.trim() ?? "";
       const topics = topicsMatch?.[1]?.trim() ?? "";
+      const keyPointsIt = keyPointsItMatch?.[1]?.trim() ?? "";
+      const keyPointsEn = keyPointsEnMatch?.[1]?.trim() ?? "";
       const translatedTranscript = translatedMatch?.[1]?.trim() ?? "";
 
       mindMapTree = buildMindMapTree(mapMatch?.[1] ?? "", title);
@@ -293,10 +334,24 @@ export async function finalizeMeeting(memoryId: string, buffer: Buffer, duration
         ? `Trascrizione (tradotta in italiano):\n${translatedTranscript}${truncatedNote}\n\nTrascrizione originale:\n${truncatedTranscript}${truncatedNote}`
         : `Trascrizione integrale:\n${truncatedTranscript}${truncatedNote}`;
 
-      content = [summary, topics, transcriptSection].filter(Boolean).join("\n\n");
+      // Stesso formato elenco puntato di TEMI (vedi parseTopics nel
+      // frontend, src/app/(app)/memory/[id]/page.tsx), così la UI può
+      // riusare la stessa funzione di parsing senza duplicarla.
+      const keyPointsSection = keyPointsIt || keyPointsEn
+        ? [
+            keyPointsIt ? `Punti salienti e richieste:\n${keyPointsIt}` : "",
+            keyPointsEn ? `Key points and requests (EN):\n${keyPointsEn}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : "";
+
+      content = [summary, topics, keyPointsSection, transcriptSection].filter(Boolean).join("\n\n");
       structuredMeta = {
         ...(summary ? { summary } : {}),
         ...(topics ? { topics } : {}),
+        ...(keyPointsIt ? { keyPointsIt } : {}),
+        ...(keyPointsEn ? { keyPointsEn } : {}),
         transcript: transcriptSection,
       };
     }
