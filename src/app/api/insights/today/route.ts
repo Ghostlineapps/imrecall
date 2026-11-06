@@ -6,6 +6,20 @@ import { noStoreJson } from "@/lib/http/noStore";
 // da un CDN o dal browser (vedi noStoreJson).
 export const dynamic = "force-dynamic";
 
+// 2026-11-05: un candidato "proximity" (vedi /api/checkin/route.ts) viene
+// creato quando l'utente è DAVVERO vicino a quel luogo in quel momento, ma
+// non ha mai avuto una scadenza: se non veniva mostrato subito (priorità
+// più bassa di un altro candidato quel giorno, o l'utente non riapriva
+// l'app), restava in coda indefinitamente e poteva riemergere giorni dopo,
+// quando l'utente si trovava altrove — segnalato dall'utente: una carta
+// d'imbarco agganciata a "Bari" (check-in del 3 novembre, mentre era
+// davvero in zona) mostrata più tardi mentre era a Caserta, a 200+ km di
+// distanza, con il titolo fuorviante "Sei tornato a Bari". Gli altri tipi
+// (on_this_day, deadline, pre_trip, people, manual_recall) non hanno
+// questo problema: non affermano "sei qui ORA", quindi restano validi più
+// a lungo.
+const PROXIMITY_FRESHNESS_MS = 3 * 60 * 60 * 1000; // 3 ore dal check-in che l'ha creato
+
 /**
  * Il cuore della strategia di retention: sceglie UN SOLO candidato di
  * resurfacing da mostrare oggi nella home, tra tutti i tipi disponibili
@@ -30,6 +44,22 @@ export async function GET(req: NextRequest) {
   const enabledTypes = profile?.notification_types_enabled ?? [
     "on_this_day", "proximity", "pre_trip", "people", "deadline", "manual_recall",
   ];
+
+  // Scarta (dismissed, non delete: restano per analisi/debug) i candidati
+  // "proximity" ormai troppo vecchi prima ancora di scegliere cosa
+  // mostrare — altrimenti uno di questi potrebbe comunque vincere per
+  // priority_score anche se ormai privo di senso rispetto alla posizione
+  // attuale dell'utente, che qui non abbiamo modo di ricontrollare (questo
+  // endpoint non riceve coordinate, vedi /api/checkin per dove vengono
+  // generati).
+  await supabase
+    .from("resurface_candidates")
+    .update({ dismissed: true })
+    .eq("user_id", user.id)
+    .eq("type", "proximity")
+    .eq("sent", false)
+    .eq("dismissed", false)
+    .lt("created_at", new Date(Date.now() - PROXIMITY_FRESHNESS_MS).toISOString());
 
   const { data: candidate } = await supabase
     .from("resurface_candidates")
