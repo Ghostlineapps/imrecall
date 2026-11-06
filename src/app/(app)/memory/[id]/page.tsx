@@ -86,6 +86,13 @@ export default function MemoryDetailPage() {
   // (fallback più sotto).
   const hasStructuredSummary = memory.type === "meeting" && !!memory.metadata?.summary;
   const topicsList = hasStructuredSummary ? parseTopics(memory.metadata.topics ?? "") : [];
+  // Riepilogo bilingue di punti salienti e richieste/azioni emerse (campi
+  // keyPointsIt/keyPointsEn in metadata, vedi structuredMeta in
+  // finalizeMeeting.ts) — stesso formato elenco puntato di TEMI, stessa
+  // funzione di parsing. Assente per riunioni elaborate prima di questo
+  // cambio (2026-11-06): in quel caso la card sotto non viene mostrata.
+  const keyPointsItList = hasStructuredSummary ? parseTopics(memory.metadata.keyPointsIt ?? "") : [];
+  const keyPointsEnList = hasStructuredSummary ? parseTopics(memory.metadata.keyPointsEn ?? "") : [];
   // Legacy: mappe generate prima del cambio sono una stringa mermaid
   // (vecchio componente MindMap, disegno SVG statico); quelle nuove sono un
   // albero JSON (nuovo MindMapTree, nodi espandibili al tocco).
@@ -225,6 +232,51 @@ export default function MemoryDetailPage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {(keyPointsItList.length > 0 || keyPointsEnList.length > 0) && (
+        <div className="card-light space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-celeste-muted">Punti salienti e richieste</p>
+            <ShareButton
+              label="Condividi punti salienti"
+              onShare={() =>
+                shareText(
+                  memory.title || "Punti salienti riunione",
+                  [
+                    keyPointsItList.length ? keyPointsItList.map((p: string) => `- ${p}`).join("\n") : "",
+                    keyPointsEnList.length
+                      ? `\nKey points and requests (EN):\n${keyPointsEnList.map((p:string) => `- ${p}`).join("\n")}`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                )
+              }
+            />
+          </div>
+          {keyPointsItList.length > 0 && (
+            <ul className="space-y-1.5 pl-4 list-disc marker:text-celeste-navy/25">
+              {keyPointsItList.map((point, i) => (
+                <li key={`it-${i}`} className="text-celeste-navy/80 text-sm leading-relaxed">
+                  {point}
+                </li>
+              ))}
+            </ul>
+          )}
+          {keyPointsEnList.length > 0 && (
+            <div className="space-y-1.5 border-t border-celeste-navy/10 pt-2.5">
+              <p className="text-xs text-celeste-muted">English</p>
+              <ul className="space-y-1.5 pl-4 list-disc marker:text-celeste-navy/25">
+                {keyPointsEnList.map((point, i) => (
+                  <li key={`en-${i}`} className="text-celeste-navy/80 text-sm leading-relaxed">
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
