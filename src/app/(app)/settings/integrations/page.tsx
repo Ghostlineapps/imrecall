@@ -13,6 +13,7 @@ type Status = {
   microsoft_email?: string;
   connected_at?: string;
   last_synced_at?: string;
+  reauth_required?: boolean;
 };
 
 // 2026-08-26: palette celeste (tredicesima schermata convertita).
@@ -156,6 +157,13 @@ function IntegrationsContent() {
 
         {googleLoading && <p className="text-sm text-celeste-muted">Verifica collegamento…</p>}
 
+        {!googleLoading && !googleData?.connected && googleData?.reauth_required && (
+          <p className="text-urgent text-sm">
+            Il permesso per {googleData.google_email} è scaduto: ricollega per tornare a rilevare
+            appuntamenti — recupereremo anche quelli arrivati nel frattempo.
+          </p>
+        )}
+
         {!googleLoading && googleData?.connected && (
           <>
             <p className="text-sm text-celeste-muted">
@@ -191,6 +199,13 @@ function IntegrationsContent() {
         </div>
 
         {microsoftLoading && <p className="text-sm text-celeste-muted">Verifica collegamento…</p>}
+
+        {!microsoftLoading && !microsoftData?.connected && microsoftData?.reauth_required && (
+          <p className="text-urgent text-sm">
+            Il permesso per {microsoftData.microsoft_email} è scaduto: ricollega per tornare a
+            rilevare appuntamenti — recupereremo anche quelli arrivati nel frattempo.
+          </p>
+        )}
 
         {!microsoftLoading && microsoftData?.connected && (
           <>
