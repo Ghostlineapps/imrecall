@@ -17,11 +17,26 @@ export async function GET() {
   const supabaseService = createServiceClient();
   const { data: integration } = await supabaseService
     .from("google_integrations")
-    .select("google_email, connected_at, last_synced_at")
+    .select("google_email, connected_at, last_synced_at, reauth_required")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (!integration) return noStoreJson({ connected: false });
+
+  // 2026-11-08: un token scaduto in modo permanente (invalid_grant, vedi
+  // src/lib/google/client.ts) lascia la riga al suo posto — serve a
+  // recuperare retroattivamente gli appuntamenti persi quando l'utente
+  // ricollega — ma la UI deve comunque mostrare "Connetti Gmail" e non
+  // "Collegato", altrimenti è lo stesso bug silenzioso di prima (status
+  // che controllava solo l'esistenza della riga, mai se il token funziona
+  // ancora).
+  if (integration.reauth_required) {
+    return noStoreJson({
+      connected: false,
+      reauth_required: true,
+      google_email: integration.google_email,
+    });
+  }
 
   return noStoreJson({
     connected: true,
