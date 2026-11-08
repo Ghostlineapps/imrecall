@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { encryptToken, decryptToken } from "@/lib/google/tokenCrypto";
+import { sendPushToUser } from "@/lib/push/server";
 
 // Riusiamo la stessa chiave di cifratura (GOOGLE_TOKEN_ENCRYPTION_KEY) e le
 // stesse funzioni encrypt/decrypt già usate per Gmail: è una cifratura
@@ -81,7 +82,16 @@ async function refreshAccessToken(refreshToken: string) {
     body: params.toString(),
   });
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // 2026-11-08: stesso principio applicato a Google dopo l'incidente
+    // gmail-sync (vedi src/lib/google/client.ts) — qui il refresh tornava
+    // semplicemente null su qualunque fallimento, senza distinguere un
+    // errore transitorio da un token permanentemente invalido
+    // (invalid_grant/AADSTS70008, es. consenso revocato dall'utente su
+    // Microsoft). Propaghiamo il body così il chiamante può distinguere i
+    // due casi invece di limitarsi a ritentare in silenzio ad ogni giro.
+    throw new Error(`Refresh del token Microsoft fallito: ${res.status} ${await res.text()}`);
+  }
 
   return res.json() as Promise<{
     access_token: string;
@@ -112,6 +122,14 @@ export async function getValidAccessToken(userId: string): Promise<string | null
 
   if (!integration) return null;
 
+  // Vedi commento gemello in src/lib/google/client.ts: se un giro
+  // precedente ha già rilevato un fallimento permanente del refresh, non
+  // ritentiamo ad ogni giro (fallirebbe di nuovo e rimanderebbe la push
+  // ogni 5 minuti) — last_synced_at resta fermo all'ultimo sync riuscito,
+  // punto da cui /api/integrations/microsoft/callback ripartirà per
+  // recuperare quanto arrivato nel frattempo quando l'utente ricollega.
+  if (integration.reauth_required) return null;
+
   const expiresAt = integration.access_token_expires_at
     ? new Date(integration.access_token_expires_at).getTime()
     : 0;
@@ -121,8 +139,26 @@ export async function getValidAccessToken(userId: string): Promise<string | null
   }
 
   const refreshToken = decryptToken(integration.refresh_token);
-  const refreshed = await refreshAccessToken(refreshToken);
-  if (!refreshed) return null;
+
+  let refreshed: { access_token: string; refresh_token?: string; expires_in: number };
+  try {
+    refreshed = await refreshAccessToken(refreshToken);
+  } catch (err) {
+    // Stesso trattamento del gemello Google: un fallimento permanente
+    // (consenso revocato, refresh token scaduto) marca la riga invece di
+    // ritentare in silenzio per sempre, e avvisa l'utente via push.
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("invalid_grant") || message.includes("AADSTS70008") || message.includes("AADSTS700082")) {
+      await supabase.from("microsoft_integrations").update({ reauth_required: true }).eq("user_id", userId);
+      await sendPushToUser(userId, {
+        title: "Collegamento Outlook da rifare",
+        body: "Il collegamento a Outlook non è più valido: riconnettilo da Impostazioni → Integrazioni per tornare a rilevare appuntamenti dalle email (recupereremo anche quelli arrivati nel frattempo).",
+        url: "/settings/integrations",
+      });
+      return null;
+    }
+    throw err;
+  }
 
   const updates: Record<string, unknown> = {
     access_token: refreshed.access_token,
