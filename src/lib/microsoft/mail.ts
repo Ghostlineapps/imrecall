@@ -18,20 +18,33 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-// Elenca gli ID dei messaggi arrivati in inbox dopo `afterUnixSeconds` —
-// stessa idea di listRecentMessageIds in src/lib/google/gmail.ts, ma via
-// Microsoft Graph invece delle API Gmail.
-export async function listRecentMessageIds(accessToken: string, afterUnixSeconds: number): Promise<string[]> {
+// Elenca UNA pagina degli ID dei messaggi arrivati in inbox dopo
+// `afterUnixSeconds` (o dalla pagina successiva via `nextLink`) — stessa
+// idea di listRecentMessageIds in src/lib/google/gmail.ts, ma via Microsoft
+// Graph invece delle API Gmail. Paginazione aggiunta 2026-11-08 per lo
+// stesso motivo del gemello Gmail: un recupero dopo un'interruzione
+// (migrazione 039) può superare abbondantemente i 50 risultati di una
+// singola pagina.
+export async function listRecentMessageIds(
+  accessToken: string,
+  afterUnixSeconds: number,
+  nextLink?: string
+): Promise<{ messageIds: string[]; nextLink: string | null }> {
   const afterIso = new Date(afterUnixSeconds * 1000).toISOString();
-  const url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter=receivedDateTime ge ${afterIso}&$select=id&$top=50&$orderby=receivedDateTime desc`;
+  const url =
+    nextLink ??
+    `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter=receivedDateTime ge ${afterIso}&$select=id&$top=50&$orderby=receivedDateTime desc`;
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) return [];
+  if (!res.ok) return { messageIds: [], nextLink: null };
 
   const data = await res.json();
-  return (data.value ?? []).map((m: { id: string }) => m.id);
+  return {
+    messageIds: (data.value ?? []).map((m: { id: string }) => m.id),
+    nextLink: data["@odata.nextLink"] ?? null,
+  };
 }
 
 export async function getMessage(accessToken: string, id: string): Promise<ParsedEmail> {
