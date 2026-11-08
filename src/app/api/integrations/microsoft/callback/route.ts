@@ -35,6 +35,25 @@ export async function GET(req: NextRequest) {
     const email = await fetchMicrosoftEmail(tokens.access_token);
 
     const supabaseService = createServiceClient();
+
+    // Vedi commento gemello in /api/integrations/google/callback: un
+    // ricollegamento dopo un'interruzione (reauth_required true) riparte
+    // da last_synced_at invece che da "adesso", per recuperare quanto
+    // arrivato nel frattempo — con lo stesso tetto di sicurezza a 90 giorni.
+    const { data: existing } = await supabaseService
+      .from("microsoft_integrations")
+      .select("last_synced_at, reauth_required")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const MAX_RECOVERY_MS = 90 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const previousSync = existing?.last_synced_at ? new Date(existing.last_synced_at).getTime() : null;
+    const lastSyncedAt =
+      existing?.reauth_required && previousSync
+        ? new Date(Math.max(previousSync, now - MAX_RECOVERY_MS)).toISOString()
+        : new Date(now).toISOString();
+
     await supabaseService.from("microsoft_integrations").upsert({
       user_id: user.id,
       refresh_token: encryptToken(tokens.refresh_token),
@@ -42,7 +61,8 @@ export async function GET(req: NextRequest) {
       access_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       microsoft_email: email,
       scope: tokens.scope,
-      last_synced_at: new Date().toISOString(),
+      last_synced_at: lastSyncedAt,
+      reauth_required: false,
       connected_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
