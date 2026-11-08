@@ -1,5 +1,6 @@
 import { encryptToken, decryptToken } from "./tokenCrypto";
 import { createServiceClient } from "@/lib/supabase/server";
+import { sendPushToUser } from "@/lib/push/server";
 
 // Scope minimi necessari: lettura Gmail (per rilevare le email di
 // riunioni/videocall/prenotazioni) e scrittura eventi sul Calendar
@@ -111,7 +112,40 @@ export async function getValidAccessToken(userId: string): Promise<string | null
   }
 
   const refreshToken = decryptToken(integration.refresh_token);
-  const refreshed = await refreshAccessToken(refreshToken);
+
+  let refreshed: TokenResponse;
+  try {
+    refreshed = await refreshAccessToken(refreshToken);
+  } catch (err) {
+    // 2026-11-08: scoperto perché l'utente ha segnalato che le conferme
+    // prenotazione (volo+hotel per Berlino) non generavano l'appuntamento.
+    // Causa: il refresh token può diventare permanentemente invalido —
+    // Google risponde "invalid_grant" — tipicamente perché l'app Google è
+    // ancora in modalità "Testing" sulla Console (vedi BACKLOG.md), dove i
+    // refresh token scadono dopo ~7 giorni, oppure perché l'utente ha
+    // revocato l'accesso da Google. Prima di questo fix il sync falliva
+    // così ogni 5 minuti all'infinito con un solo console.error — per
+    // questo utente dal 2026-09-01 (7 giorni esatti dopo il collegamento)
+    // fino ad oggi, ~2 mesi, senza che nessuno se ne accorgesse: la UI in
+    // Impostazioni continuava comunque a mostrare "Collegato" perché
+    // /api/integrations/google/status controlla solo che la riga esista,
+    // non che il token funzioni ancora. Qui invece, quando il fallimento è
+    // di questo tipo (permanente, non un errore di rete transitorio),
+    // rimuoviamo subito il collegamento — così la UI torna a mostrare
+    // "Connetti Gmail" invece di uno stato falso — e avvisiamo l'utente via
+    // push per invitarlo a ricollegare, invece di ritentare in silenzio.
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("invalid_grant")) {
+      await supabase.from("google_integrations").delete().eq("user_id", userId);
+      await sendPushToUser(userId, {
+        title: "Collegamento Gmail da rifare",
+        body: "Il collegamento a Gmail non è più valido: riconnettilo da Impostazioni → Integrazioni per tornare a rilevare appuntamenti dalle email.",
+        url: "/settings/integrations",
+      });
+      return null;
+    }
+    throw err;
+  }
 
   await supabase
     .from("google_integrations")
