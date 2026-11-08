@@ -51,6 +51,10 @@ function romeOffsetMinutesAt(utcMs: number): number {
   return (romeAsUtcMs - utcMs) / 60000;
 }
 
+// Stesso motivo del gemello Gmail — vedi commenti lì.
+export const maxDuration = 300;
+const SYNC_DEADLINE_MS = 270_000;
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.OUTLOOK_CRON_SECRET}`) {
@@ -86,12 +90,26 @@ async function syncUserOutlook(
   const accessToken = await getValidAccessToken(integration.user_id);
   if (!accessToken) return 0;
 
-  // Stesso margine di 10 minuti usato per Gmail — vedi commenti lì.
+  const startedAt = Date.now();
+
+  // Stesso margine di 10 minuti usato per Gmail — vedi commenti lì. Dopo un
+  // recupero (migrazione 039) può essere vecchio di settimane/mesi, non
+  // solo minuti: intenzionale, vedi /api/integrations/microsoft/callback.
   const sinceUnix = integration.last_synced_at
     ? Math.floor(new Date(integration.last_synced_at).getTime() / 1000) - 600
     : Math.floor(Date.now() / 1000) - 3600;
 
-  const messageIds = await listRecentMessageIds(accessToken, sinceUnix);
+  // Stesso motivo del gemello Gmail: raccogliamo tutte le pagine prima di
+  // processare, con lo stesso tetto di sicurezza.
+  const messageIds: string[] = [];
+  let nextLink: string | undefined;
+  const MAX_LIST_PAGES = 40;
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const { messageIds: pageIds, nextLink: next } = await listRecentMessageIds(accessToken, sinceUnix, nextLink);
+    messageIds.push(...pageIds);
+    if (!next) break;
+    nextLink = next;
+  }
 
   const { data: alreadyProcessed } = await supabase
     .from("processed_outlook_messages")
@@ -103,8 +121,15 @@ async function syncUserOutlook(
   const newIds = messageIds.filter((id) => !processedIds.has(id));
 
   let created = 0;
+  let budgetExceeded = false;
 
   for (const id of newIds) {
+    if (Date.now() - startedAt > SYNC_DEADLINE_MS) {
+      // Stesso motivo del gemello Gmail — vedi commenti lì.
+      budgetExceeded = true;
+      break;
+    }
+
     try {
       const email = await getMessage(accessToken, id);
       const detection = await detectAppointmentFromEmail(email);
@@ -161,10 +186,12 @@ async function syncUserOutlook(
     });
   }
 
-  await supabase
-    .from("microsoft_integrations")
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq("user_id", integration.user_id);
+  if (!budgetExceeded) {
+    await supabase
+      .from("microsoft_integrations")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("user_id", integration.user_id);
+  }
 
   return created;
 }
