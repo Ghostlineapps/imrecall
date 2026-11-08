@@ -104,6 +104,15 @@ export async function getValidAccessToken(userId: string): Promise<string | null
 
   if (!integration) return null;
 
+  // 2026-11-08: se un giro precedente ha già rilevato un invalid_grant
+  // permanente (vedi sotto), non ha senso ritentare il refresh ogni volta
+  // che gira il cron — fallirebbe di nuovo, e soprattutto manderebbe di
+  // nuovo la push qui sotto ogni 5 minuti. Usciamo subito: last_synced_at
+  // resta fermo al punto dell'ultimo sync riuscito, che è esattamente il
+  // punto da cui /api/integrations/google/callback ripartirà per
+  // recuperare quanto arrivato nel frattempo quando l'utente ricollega.
+  if (integration.reauth_required) return null;
+
   const expiresAt = integration.access_token_expires_at ? new Date(integration.access_token_expires_at) : null;
   const stillValid = expiresAt && expiresAt.getTime() - Date.now() > 60_000; // margine di 1 minuto
 
@@ -129,17 +138,26 @@ export async function getValidAccessToken(userId: string): Promise<string | null
     // fino ad oggi, ~2 mesi, senza che nessuno se ne accorgesse: la UI in
     // Impostazioni continuava comunque a mostrare "Collegato" perché
     // /api/integrations/google/status controlla solo che la riga esista,
-    // non che il token funzioni ancora. Qui invece, quando il fallimento è
-    // di questo tipo (permanente, non un errore di rete transitorio),
-    // rimuoviamo subito il collegamento — così la UI torna a mostrare
-    // "Connetti Gmail" invece di uno stato falso — e avvisiamo l'utente via
-    // push per invitarlo a ricollegare, invece di ritentare in silenzio.
+    // non che il token funzioni ancora.
+    //
+    // Qui, quando il fallimento è di questo tipo (permanente, non un
+    // errore di rete transitorio), marchiamo la riga con
+    // reauth_required = true — la UI torna a mostrare "Connetti Gmail"
+    // (vedi /api/integrations/google/status) invece di uno stato falso —
+    // e avvisiamo l'utente via push, invece di ritentare in silenzio.
+    // A differenza del fix precedente (che CANCELLAVA la riga), qui la
+    // teniamo: last_synced_at resta congelato all'ultimo sync riuscito
+    // invece di sparire, così al ricollegamento /api/integrations/
+    // google/callback può ripartire da lì e recuperare retroattivamente
+    // gli appuntamenti arrivati durante l'interruzione (richiesta utente:
+    // altrimenti quegli appuntamenti restano persi e tocca recuperarli a
+    // mano) invece di ripartire da "adesso" come fa un primo collegamento.
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("invalid_grant")) {
-      await supabase.from("google_integrations").delete().eq("user_id", userId);
+      await supabase.from("google_integrations").update({ reauth_required: true }).eq("user_id", userId);
       await sendPushToUser(userId, {
         title: "Collegamento Gmail da rifare",
-        body: "Il collegamento a Gmail non è più valido: riconnettilo da Impostazioni → Integrazioni per tornare a rilevare appuntamenti dalle email.",
+        body: "Il collegamento a Gmail non è più valido: riconnettilo da Impostazioni → Integrazioni per tornare a rilevare appuntamenti dalle email (recupereremo anche quelli arrivati nel frattempo).",
         url: "/settings/integrations",
       });
       return null;
