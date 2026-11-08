@@ -17,23 +17,40 @@ export type ParsedEmail = {
 };
 
 /**
- * Elenca gli id dei messaggi in arrivo (inbox) più recenti di `afterUnixSeconds`.
- * Il filtro `after:` di Gmail lavora a granularità di giorno, non di secondo:
- * per questo il chiamante deve comunque scartare i messaggi già processati
- * (vedi processed_gmail_messages) invece di fidarsi ciecamente di questo filtro.
+ * Elenca UNA pagina di id dei messaggi in arrivo (inbox) più recenti di
+ * `afterUnixSeconds`, partendo da `pageToken` se presente. Il filtro
+ * `after:` di Gmail lavora a granularità di giorno, non di secondo: per
+ * questo il chiamante deve comunque scartare i messaggi già processati
+ * (vedi processed_gmail_messages) invece di fidarsi ciecamente di questo
+ * filtro.
+ *
+ * 2026-11-08: prima restituiva una sola pagina da 25 senza nextPageToken —
+ * bastava per un sync incrementale ogni 5 minuti, ma un recupero
+ * retroattivo dopo un'interruzione (vedi /api/integrations/google/callback)
+ * può dover scorrere molte più email di 25: senza paginazione, last_synced_at
+ * sarebbe comunque avanzato a fine giro lasciando perse in silenzio tutte
+ * le email oltre la 25esima. Il chiamante (vedi /api/cron/gmail-sync) ora
+ * scorre le pagine finché ce ne sono o finché non esaurisce il budget di
+ * tempo del singolo giro cron.
  */
-export async function listRecentMessageIds(accessToken: string, afterUnixSeconds: number): Promise<string[]> {
-  const q = `in:inbox after:${afterUnixSeconds}`;
-  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({
-    q,
-    maxResults: "25",
-  })}`;
+export async function listRecentMessageIds(
+  accessToken: string,
+  afterUnixSeconds: number,
+  pageToken?: string
+): Promise<{ messageIds: string[]; nextPageToken: string | null }> {  const q = `in:inbox after:${afterUnixSeconds}`;
+  const params = new URLSearchParams({ q, maxResults: "50" });
+  if (pageToken) params.set("pageToken", pageToken);
+
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     throw new Error(`Gmail messages.list fallita: ${res.status} ${await res.text()}`);
   }
   const json = await res.json();
-  return (json.messages ?? []).map((m: { id: string }) => m.id);
+  return {
+    messageIds: (json.messages ?? []).map((m: { id: string }) => m.id),
+    nextPageToken: json.nextPageToken ?? null,
+  };
 }
 
 function base64UrlDecode(data: string): string {
