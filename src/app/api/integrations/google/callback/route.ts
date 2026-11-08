@@ -44,6 +44,35 @@ export async function GET(req: NextRequest) {
     const googleEmail = await fetchGoogleEmail(tokens.access_token);
     const supabaseService = createServiceClient();
 
+    // 2026-11-08: di norma un (ri)collegamento riparte da "adesso" — niente
+    // scansione retroattiva della cronologia della casella al primo
+    // collegamento, sia per privacy sia per evitare un'ondata di
+    // appuntamenti vecchi (vedi commento sotto). MA se questo è un
+    // ricollegamento dopo un'interruzione (reauth_required true — refresh
+    // token scaduto, vedi src/lib/google/client.ts), last_synced_at segna
+    // ancora l'ultimo sync riuscito PRIMA che si rompesse: da lì vogliamo
+    // ripartire, non da "adesso", altrimenti tutto quello che è arrivato
+    // durante l'interruzione (richiesta esplicita dell'utente: le conferme
+    // volo+hotel per Berlino che hanno fatto scoprire il bug, in questo
+    // caso) resta perso per sempre e tocca recuperarlo a mano. Tetto di
+    // sicurezza a 90 giorni indietro, per non scatenare comunque una
+    // scansione a tempo indeterminato se l'interruzione fosse più vecchia.
+    const { data: existing } = await supabaseService
+      .from("google_integrations")
+      .select("last_synced_at, reauth_required")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const MAX_RECOVERY_MS = 90 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const recoveryFloor = now - MAX_RECOVERY_MS;
+    const previousSync = existing?.last_synced_at ? new Date(existing.last_synced_at).getTime() : null;
+
+    const lastSyncedAt =
+      existing?.reauth_required && previousSync
+        ? new Date(Math.max(previousSync, recoveryFloor)).toISOString()
+        : new Date(now).toISOString();
+
     await supabaseService.from("google_integrations").upsert({
       user_id: user.id,
       refresh_token: encryptToken(tokens.refresh_token),
@@ -51,11 +80,8 @@ export async function GET(req: NextRequest) {
       access_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       google_email: googleEmail,
       scope: tokens.scope,
-      // Processiamo solo le email arrivate DA QUESTO momento in poi: niente
-      // scansione retroattiva della cronologia della casella, sia per
-      // rispetto della privacy sia per evitare un'ondata di appuntamenti
-      // vecchi al primo collegamento.
-      last_synced_at: new Date().toISOString(),
+      last_synced_at: lastSyncedAt,
+      reauth_required: false,
       updated_at: new Date().toISOString(),
     });
 
