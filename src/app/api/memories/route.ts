@@ -4,6 +4,7 @@ import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classif
 import { waitUntil } from "@vercel/functions";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 import { noStoreJson } from "@/lib/http/noStore";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Il GET sotto legge dati specifici dell'utente autenticato — non deve mai
 // essere cacheabile da un CDN o dal browser (vedi noStoreJson).
@@ -13,6 +14,13 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Freno a raffica condiviso con tutte le route che creano/rielaborano una
+  // memoria (stesso costo: una pipeline processMemory via OpenAI per
+  // chiamata) — vedi src/lib/security/rateLimit.ts.
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const body = await req.json();
   const { type, content, link_url, title, description, image, latitude, longitude } = body;
