@@ -58,6 +58,10 @@ export async function POST(req: NextRequest) {
             stripe_customer_id: customerId ?? null,
             stripe_subscription_id: subscriptionId,
             subscription_ends_at: new Date(subscription.current_period_end * 1000).toISOString(),
+            // Un abbonamento appena creato non ha mai una disdetta già
+            // programmata — esplicito per sicurezza nel caso (raro) in cui
+            // l'utente stia ri-sottoscrivendo con lo stesso cliente Stripe.
+            cancel_at_period_end: false,
           })
           .eq("id", userId);
 
@@ -124,6 +128,12 @@ export async function POST(req: NextRequest) {
         .update({
           subscription_status: subscription.status,
           subscription_ends_at: new Date(subscription.current_period_end * 1000).toISOString(),
+          // Rispecchia sempre lo stato vero su Stripe, qualunque sia la via
+          // con cui è stato cambiato: la nostra /api/user/subscription (che
+          // lo scrive anche subito, in modo ottimistico, per non far
+          // aspettare l'utente questo webhook), il dashboard Stripe, o
+          // un'altra integrazione — vedi migrazione 041.
+          cancel_at_period_end: subscription.cancel_at_period_end,
           // Se Stripe segna l'abbonamento come cancellato senza passare da
           // "customer.subscription.deleted" (es. cancel_at_period_end
           // arrivato a scadenza), il piano torna gratuito già qui.
@@ -145,6 +155,7 @@ export async function POST(req: NextRequest) {
         .update({
           subscription_tier: "free",
           subscription_status: "canceled",
+          cancel_at_period_end: false,
         })
         .eq("stripe_subscription_id", subscription.id);
 
