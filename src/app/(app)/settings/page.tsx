@@ -89,6 +89,11 @@ export default function SettingsPage() {
         </p>
       </Link>
 
+      <Link href="/settings/account" className="card-light block">
+        <p className="font-medium">Account</p>
+        <p className="text-xs text-celeste-muted mt-1">Email ed eliminazione account</p>
+      </Link>
+
       <button onClick={handleLogout} className="btn-ghost-light text-sm">
         Esci
       </button>
