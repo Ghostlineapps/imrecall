@@ -12,7 +12,7 @@ export function useCapture() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function captureText(content: string) {
+  async function captureText(content: string, coords?: { latitude: number; longitude: number } | null) {
     setIsSaving(true);
     setError(null);
 
@@ -20,7 +20,11 @@ export function useCapture() {
       const res = await fetch("/api/memories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "text", content }),
+        body: JSON.stringify({
+          type: "text",
+          content,
+          ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
+        }),
       });
 
       if (!res.ok) throw new Error("save_failed");
