@@ -6,6 +6,7 @@ import { detectAppointmentsFromText } from "@/lib/openai/telegramAppointments";
 import { waitUntil } from "@vercel/functions";
 import { sendTelegramMessage } from "@/lib/telegram/send";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded, limitsEnabled } from "@/lib/subscription/limits";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -86,6 +87,18 @@ export async function POST(req: NextRequest) {
       chatId,
       `Hai raggiunto il limite di ${FREE_MEMORIES_PER_MONTH} ricordi questo mese sul piano Free.`
     );
+    return NextResponse.json({ ok: true });
+  }
+
+  // Stesso bucket per utente delle route di cattura nell'app (vedi
+  // src/lib/security/rateLimit.ts e /api/memories): un utente non deve
+  // poter aggirare il freno a raffica passando da Telegram invece che
+  // dall'app. Rispondiamo comunque 200 a Telegram (altrimenti ritenterebbe
+  // all'infinito lo stesso update), avvisando l'utente via messaggio.
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${profile.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) {
+    await sendTelegramMessage(chatId, "Troppi messaggi tutti insieme — riprova tra un minuto.");
     return NextResponse.json({ ok: true });
   }
 
