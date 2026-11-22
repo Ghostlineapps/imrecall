@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embeddings";
 import { noStoreJson } from "@/lib/http/noStore";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Risultati specifici dell'utente autenticato — non deve mai essere
 // cacheabile da un CDN o dal browser: una cache per-URL (chiave "q")
@@ -27,6 +28,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
   if (!q) return noStoreJson({ memories: [] });
+
+  // Vedi src/lib/security/rateLimit.ts: freno a raffica, non un tetto di
+  // piano — ogni ricerca genera un embedding OpenAI.
+  const { openaiSearch } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:search:${user.id}`, openaiSearch.limit, openaiSearch.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const queryEmbedding = await generateEmbedding(q);
   const { data: matches, error } = await supabase.rpc("match_memories", {
