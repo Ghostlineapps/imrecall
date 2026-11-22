@@ -14,6 +14,10 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Conferma dopo la cancellazione account self-service (vedi
+  // src/app/(app)/settings/account/page.tsx), che reindirizza qui con
+  // questo parametro dopo il signOut lato client.
+  const accountDeleted = searchParams.get("account_deleted") === "1";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,6 +53,12 @@ function LoginForm() {
           <h1 className="text-2xl font-semibold">Bentornato</h1>
           <p className="text-white/50 text-sm mt-1">Accedi a IMRECALL</p>
         </div>
+
+        {accountDeleted && (
+          <p className="text-sm text-white/70 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+            Il tuo account è stato eliminato. Grazie per aver provato IMRECALL.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
