@@ -10,6 +10,7 @@ import {
   isDocumentQuotaExceeded,
   isMemoryQuotaExceeded,
 } from "@/lib/subscription/limits";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -97,6 +98,12 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts — stesso bucket di tutte le route
+  // che creano/rielaborano una memoria via OpenAI (qui: estrazione testo + processMemory).
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   // Enforcement limite tier Free: 100 memorie/mese, condiviso tra tutti i
   // tipi (testo, link, audio, foto, documento, riunione) — vedi
