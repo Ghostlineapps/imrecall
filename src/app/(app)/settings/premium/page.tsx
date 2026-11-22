@@ -34,6 +34,39 @@ function PremiumContent() {
   const [loadingPlan, setLoadingPlan] = useState<Plan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Disdetta/riattivazione rinnovo (richiesta 2026-11-22, vedi
+  // src/app/api/user/subscription/route.ts e migrazione 041) — reversibile
+  // finché il periodo già pagato non è scaduto, quindi niente conferma a
+  // parte qui, a differenza della cancellazione account vera e propria.
+  const [subActionLoading, setSubActionLoading] = useState(false);
+  const [subError, setSubError] = useState<string | null>(null);
+  const cancelAtPeriodEnd = Boolean(data?.cancel_at_period_end);
+  const subscriptionEndsAt = data?.subscription_ends_at as string | undefined;
+  const subscriptionEndsAtLabel = subscriptionEndsAt
+    ? new Date(subscriptionEndsAt).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+
+  async function toggleCancelAtPeriodEnd(next: boolean) {
+    setSubError(null);
+    setSubActionLoading(true);
+    try {
+      const res = await fetch("/api/user/subscription", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancel_at_period_end: next }),
+      });
+      if (!res.ok) {
+        setSubError("Non siamo riusciti ad aggiornare l'abbonamento. Riprova tra poco.");
+        return;
+      }
+      mutate();
+    } catch {
+      setSubError("Non siamo riusciti ad aggiornare l'abbonamento. Riprova tra poco.");
+    } finally {
+      setSubActionLoading(false);
+    }
+  }
+
   const tier = data?.subscription_tier;
   const isPremium = tier === "premium";
   const isFounder = tier === "founder";
@@ -118,11 +151,33 @@ function PremiumContent() {
           <div className="w-9 h-9 rounded-full bg-celeste-accent/15 flex items-center justify-center text-celeste-accentDark shrink-0">
             <Crown size={18} />
           </div>
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-medium">Il tuo account è già Premium</p>
             <p className="text-xs text-celeste-muted mt-0.5">
               Grazie per il supporto — hai già accesso a tutti i vantaggi qui sotto.
             </p>
+            {cancelAtPeriodEnd ? (
+              <p className="text-xs text-celeste-muted mt-2">
+                Hai disdetto il rinnovo
+                {subscriptionEndsAtLabel && <>: resterai Premium fino al {subscriptionEndsAtLabel}</>}.{" "}
+                <button
+                  onClick={() => toggleCancelAtPeriodEnd(false)}
+                  disabled={subActionLoading}
+                  className="text-celeste-accentDark font-medium underline disabled:opacity-50"
+                >
+                  Riattiva
+                </button>
+              </p>
+            ) : (
+              <button
+                onClick={() => toggleCancelAtPeriodEnd(true)}
+                disabled={subActionLoading}
+                className="text-xs text-celeste-muted underline mt-2 disabled:opacity-50"
+              >
+                Disdici il rinnovo
+              </button>
+            )}
+            {subError && <p className="text-urgent text-xs mt-1">{subError}</p>}
           </div>
         </div>
       )}
