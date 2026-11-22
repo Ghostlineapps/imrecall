@@ -4,6 +4,7 @@ import { processMemory } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
 import { finalizeMeeting } from "@/lib/openai/finalizeMeeting";
 import { finalizeAudio } from "@/lib/openai/finalizeAudio";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Stesso tetto delle route di upload originali (vedi i commenti lì): senza
 // questo, waitUntil() sotto verrebbe ucciso dal tetto di default della
@@ -31,6 +32,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts — stesso bucket delle altre route che
+  // invocano processMemory()/Whisper.
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const { data: memory } = await supabase
     .from("memories")
