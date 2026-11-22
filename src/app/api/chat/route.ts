@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embeddings";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -46,6 +47,13 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return new Response("unauthorized", { status: 401 });
+
+  // Freno "a raffica" indipendente dal limite giornaliero sotto (5/giorno
+  // Free): qui copre anche Premium, che non ha un tetto giornaliero — vedi
+  // src/lib/security/rateLimit.ts.
+  const { openaiChat } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:chat:${user.id}`, openaiChat.limit, openaiChat.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const { query, session_id } = await req.json();
 
