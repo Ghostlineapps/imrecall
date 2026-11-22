@@ -10,6 +10,7 @@ import {
   transcriptionMinutesQuota,
   transcriptionMinutesUsedThisMonth,
 } from "@/lib/subscription/limits";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Tetto per singola riunione: 30 min Free, 50 min Premium.
 // 2026-09-22: abbassato da 90 a 50 min dopo che una riunione di ~20 min è
@@ -68,6 +69,12 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts — stesso bucket di tutte le route
+  // che creano/rielaborano una memoria via OpenAI (qui: Whisper + riassunto GPT).
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   // 2026-09-17: il body è ora JSON leggero ({ path, duration }), non più il
   // file. Il blob arriva su Storage caricato DIRETTAMENTE dal client (vedi
