@@ -13,10 +13,23 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  // Richiesto 2026-11-22: prima non c'era alcun consenso esplicito ai
+  // Termini/Privacy al momento della creazione account — i link esistevano
+  // solo dentro Impostazioni, dopo che l'account era già attivo. Prima di
+  // accettare pagamenti pubblicamente serve poter dimostrare un'accettazione
+  // esplicita al momento della registrazione, non solo che il documento
+  // esiste da qualche parte nell'app.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!acceptedTerms) {
+      setError("Devi accettare i Termini di Servizio e la Privacy Policy per continuare.");
+      return;
+    }
+
     setLoading(true);
 
     const supabase = createClient();
@@ -24,7 +37,9 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        // terms_accepted_at: prova della data/ora di accettazione esplicita,
+        // richiesta sopra — finisce in user_metadata (auth.users.raw_user_meta_data).
+        data: { full_name: fullName, terms_accepted_at: new Date().toISOString() },
         emailRedirectTo: `${window.location.origin}/callback`,
       },
     });
@@ -40,6 +55,12 @@ export default function SignupPage() {
   }
 
   async function handleGoogleSignup() {
+    if (!acceptedTerms) {
+      setError("Devi accettare i Termini di Servizio e la Privacy Policy per continuare.");
+      return;
+    }
+    setError(null);
+
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -108,8 +129,29 @@ export default function SignupPage() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+
+          <label className="flex items-start gap-2 text-sm text-white/60">
+            <input
+              type="checkbox"
+              required
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 flex-shrink-0 accent-primary"
+            />
+            <span>
+              Accetto i{" "}
+              <Link href="/terms" target="_blank" className="text-primary-light underline">
+                Termini di Servizio
+              </Link>{" "}
+              e l&apos;
+              <Link href="/privacy" target="_blank" className="text-primary-light underline">
+                Informativa sulla Privacy
+              </Link>
+            </span>
+          </label>
+
           {error && <p className="text-urgent text-sm">{error}</p>}
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <button type="submit" disabled={loading || !acceptedTerms} className="btn-primary w-full">
             {loading ? "Creazione in corso…" : "Crea account"}
           </button>
         </form>
@@ -122,7 +164,8 @@ export default function SignupPage() {
 
         <button
           onClick={handleGoogleSignup}
-          className="w-full border border-white/10 rounded-full px-5 py-2.5 hover:bg-white/5 transition-colors"
+          disabled={!acceptedTerms}
+          className="w-full border border-white/10 rounded-full px-5 py-2.5 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Continua con Google
         </button>
