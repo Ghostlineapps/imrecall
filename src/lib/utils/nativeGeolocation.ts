@@ -29,6 +29,33 @@ export async function ensureNativeLocationPermission(): Promise<void> {
   }
 }
 
+/**
+ * Posizione attuale del dispositivo (non da EXIF: quella è letta a parte da
+ * extractPhotoCoords in ImageCapture.tsx, che ricade su questa stessa logica
+ * solo quando la foto non ne ha una propria). Usata per allegare un luogo a
+ * una nota di testo o vocale — richiesta utente 2026-11-21: non c'era alcun
+ * modo di salvare dove ci si trova quando si scrive/registra una memoria "a
+ * mano", solo le foto collegavano automaticamente un luogo (via GPS/EXIF).
+ * Ritorna null se il permesso viene negato o la posizione non è disponibile:
+ * la memoria va comunque salvata senza luogo, non è un caso bloccante.
+ */
+export async function getCurrentDeviceCoords(): Promise<{ latitude: number; longitude: number } | null> {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return null;
+
+  // Vedi commento sopra su ensureNativeLocationPermission: senza, dentro
+  // l'app nativa Android la webview rifiuta sempre in silenzio.
+  await ensureNativeLocationPermission();
+
+  try {
+    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, maximumAge: 60000 })
+    );
+    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  } catch {
+    return null; // permesso negato o posizione non disponibile
+  }
+}
+
 // --- Ponte verso il plugin nativo "NativeBridge" (geofencing + tracking) ---
 //
 // @capacitor/geolocation gestisce solo il permesso di posizione in
