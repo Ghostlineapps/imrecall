@@ -10,7 +10,17 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { data } = useSWR("/api/user/usage", fetcher);
+  // isLoading (vero solo finché non c'è ancora nessun dato in cache SWR per
+  // questa chiave, non durante le rivalidazioni successive in background):
+  // richiesto 2026-11-22 dopo che un test ha mostrato il piano passare da
+  // "Free" a "Premium" tra due caricamenti della stessa pagina, senza che
+  // nulla fosse cambiato davvero. Causa: sotto, {data?.subscription_tier ??
+  // "free"} mostrava subito "Free" mentre `data` era ancora undefined (primo
+  // montaggio, nessuna cache), salvo poi "correggersi" al tier vero non
+  // appena /api/user/usage rispondeva — un "free" sbagliato, non solo un
+  // placeholder neutro. Mostriamo uno skeleton finché non abbiamo un dato
+  // reale, invece di affermare un piano che potrebbe non essere quello vero.
+  const { data, isLoading } = useSWR("/api/user/usage", fetcher);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -30,18 +40,24 @@ export default function SettingsPage() {
           <p className="text-sm text-celeste-muted">Piano attuale</p>
           <ChevronRight size={16} className="text-celeste-navy/25" />
         </div>
-        <p className="font-medium capitalize">{data?.subscription_tier ?? "free"}</p>
-        {data?.subscription_tier === "free" && (
-          <p className="text-xs text-celeste-muted mt-1">
-            {data?.memory_count_this_month ?? 0}/{data?.memory_limit_this_month ?? 100} memorie questo mese
-          </p>
-        )}
-        <p className="text-xs text-celeste-muted mt-1">
-          {data?.transcription_minutes_this_month ?? 0}/{data?.transcription_minutes_limit ?? 60} min di
-          trascrizione questo mese (audio + riunioni)
-        </p>
-        {data?.subscription_tier === "free" && (
-          <p className="text-xs text-celeste-accentDark font-medium mt-1">Scopri Premium →</p>
+        {isLoading ? (
+          <div className="h-4 w-24 rounded bg-celeste-navy/10 animate-pulse" />
+        ) : (
+          <>
+            <p className="font-medium capitalize">{data?.subscription_tier ?? "free"}</p>
+            {data?.subscription_tier === "free" && (
+              <p className="text-xs text-celeste-muted mt-1">
+                {data?.memory_count_this_month ?? 0}/{data?.memory_limit_this_month ?? 100} memorie questo mese
+              </p>
+            )}
+            <p className="text-xs text-celeste-muted mt-1">
+              {data?.transcription_minutes_this_month ?? 0}/{data?.transcription_minutes_limit ?? 60} min di
+              trascrizione questo mese (audio + riunioni)
+            </p>
+            {data?.subscription_tier === "free" && (
+              <p className="text-xs text-celeste-accentDark font-medium mt-1">Scopri Premium →</p>
+            )}
+          </>
         )}
       </Link>
 
