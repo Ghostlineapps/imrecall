@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Rielabora una memoria già esistente (nuovo embedding + classificazione),
 // riusando la stessa pipeline di processMemory() usata alla creazione.
@@ -11,6 +12,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts — stesso bucket delle altre route che
+  // invocano processMemory() (qui chiamata in modo sincrono, non in background).
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const { data: memory } = await supabase
     .from("memories")
