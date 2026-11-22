@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { processMemory } from "@/lib/openai/classification";
+import { processMemory, geocodeAndLinkPlaceByCoords } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
 import { FREE_MEMORIES_PER_MONTH, isMemoryQuotaExceeded } from "@/lib/subscription/limits";
 import { noStoreJson } from "@/lib/http/noStore";
@@ -15,7 +15,14 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { type, content, link_url, title, description, image } = body;
+  const { type, content, link_url, title, description, image, latitude, longitude } = body;
+
+  // Posizione del dispositivo al momento del salvataggio, se l'utente ha
+  // scelto di allegarla (vedi TextCapture.tsx, pulsante "Aggiungi luogo") —
+  // stesso meccanismo delle coordinate EXIF/GPS già usate per le foto
+  // (geocodeAndLinkPlaceByCoords sotto, /api/upload/image). Non obbligatoria:
+  // senza, la memoria viene comunque creata normalmente.
+  const hasCoords = typeof latitude === "number" && typeof longitude === "number";
 
   // Enforcement limite tier Free: 100 memorie/mese, contate dal vivo su
   // tutte le memorie dell'utente (vedi src/lib/subscription/limits.ts).
@@ -48,6 +55,16 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Collegamento al luogo, sincrono come in /api/upload/image: la
+  // geocodifica di una singola coordinata è veloce e vogliamo che il
+  // collegamento esista subito, anche se processMemory (asincrono, con
+  // retry) dovesse fallire più volte.
+  if (hasCoords) {
+    await geocodeAndLinkPlaceByCoords(supabase, user.id, memory.id, latitude, longitude).catch((err) =>
+      console.error("geocodeAndLinkPlaceByCoords failed", err)
+    );
   }
 
   // Risposta istantanea: la classificazione AI (embedding, categoria, tag,
