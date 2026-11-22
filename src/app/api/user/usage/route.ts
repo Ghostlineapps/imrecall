@@ -20,7 +20,9 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("subscription_tier, memory_count_total, storage_bytes_used")
+    .select(
+      "subscription_tier, memory_count_total, storage_bytes_used, cancel_at_period_end, subscription_ends_at"
+    )
     .eq("id", user.id)
     .single();
 
