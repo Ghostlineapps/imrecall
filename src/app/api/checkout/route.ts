@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { stripe, isValidPlan, priceIdForPlan, FOUNDER_SEATS_TOTAL, type PlanId } from "@/lib/stripe/client";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 function appUrl(): string {
   return (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.imrecall.app").replace(/\/$/, "");
@@ -18,6 +19,13 @@ export async function POST(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts — freno a raffica sulla creazione di
+  // Checkout Session Stripe (distinto dal controllo "already_premium" sotto,
+  // che blocca solo i doppi acquisti, non le chiamate ripetute in sé).
+  const { stripeCheckout } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `stripe:checkout:${user.id}`, stripeCheckout.limit, stripeCheckout.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   let plan: unknown;
   try {
