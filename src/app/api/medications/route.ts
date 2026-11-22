@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { processMemory } from "@/lib/openai/classification";
 import { waitUntil } from "@vercel/functions";
 import { noStoreJson } from "@/lib/http/noStore";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/security/rateLimit";
 
 // Dati sanitari specifici dell'utente — non deve mai essere cacheabile da
 // un CDN o dal browser (vedi noStoreJson).
@@ -76,6 +77,13 @@ export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Vedi src/lib/security/rateLimit.ts: anche se questa route non chiama
+  // OpenAI direttamente, la memoria creata sotto passa comunque per
+  // processMemory() in background, stesso bucket delle altre route di cattura.
+  const { openaiProcess } = RATE_LIMITS;
+  const rateLimit = await checkRateLimit(supabase, `openai:process:${user.id}`, openaiProcess.limit, openaiProcess.windowSeconds);
+  if (!rateLimit.allowed) return rateLimitResponse(rateLimit.retryAfterSeconds);
 
   const formData = await req.formData();
   const name = (formData.get("name") as string | null)?.trim();
